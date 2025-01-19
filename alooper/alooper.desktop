@@ -1,0 +1,13 @@
+[Desktop Entry]
+Version=0.2
+Type=Application
+Name=alooper
+Comment=Audio File Looper for Jack Audio Connection Kit
+Exec=alooper
+Icon=alooper
+Categories=AudioVideo;Audio;
+MimeType=audio/x-audio
+Terminal=false
+X-NSM-Capable=false
+X-NSM-Exec=alooper
+Name[de_DE]=alooper
