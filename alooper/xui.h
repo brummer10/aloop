@@ -6,8 +6,14 @@
  * Copyright (C) 2024 brummer <brummer@web.de>
  */
 
-#include <mutex>
+#include <algorithm>
+#include <cctype>
 #include <condition_variable>
+#include <filesystem>
+#include <iostream>
+#include <mutex>
+#include <set>
+#include <string>
 #include <sndfile.hh>
 
 #include "xwidgets.h"
@@ -17,6 +23,75 @@
 
 #ifndef AUDIOLOOPERUI_H
 #define AUDIOLOOPERUI_H
+
+class SupportedFormats {
+public:
+    std::set<std::string> supportedExtensions;
+
+    SupportedFormats() {
+        supportedExtensions = getSupportedFileExtensions();
+    }
+
+    bool isSupported(std::string filename) {
+        std::filesystem::path p(filename);
+        std::string ext = p.extension().string();
+
+        if (not ext.empty()) {
+            // check for lower-cased file extension
+            std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c){ return std::tolower(c); });
+            return supportedExtensions.count(ext.substr(1)) >= 1;
+        }
+
+        return false;
+    }
+
+private:
+    std::set<std::string> getSupportedFileExtensions() {
+        std::set<std::string> extensions;
+        SF_INFO sfInfo;
+        int format;
+
+
+        // Get the number of supported major formats
+        int majorFormatCount;
+        sf_command(SF_NULL, SFC_GET_FORMAT_MAJOR_COUNT, &majorFormatCount, sizeof(int));
+
+        // Get the number of supported sub formats
+        int subFormatCount;
+        sf_command(SF_NULL, SFC_GET_FORMAT_SUBTYPE_COUNT, &subFormatCount, sizeof(int));
+
+        sfInfo.channels = 1;
+
+        // Get information about each major format
+        for (int i = 0; i < majorFormatCount; ++i) {
+            SF_FORMAT_INFO formatInfo;
+            formatInfo.format = i;
+            sf_command(SF_NULL, SFC_GET_FORMAT_MAJOR, &formatInfo, sizeof(formatInfo));
+
+            format = formatInfo.format;
+            if (formatInfo.extension != SF_NULL) {
+                extensions.insert(formatInfo.extension);
+            }
+
+            // Get information about each sub format
+            for (int j = 0; j < subFormatCount; ++j) {
+                SF_FORMAT_INFO formatInfo;
+                formatInfo.format = j;
+                sf_command(SF_NULL, SFC_GET_FORMAT_SUBTYPE, &formatInfo, sizeof(SF_FORMAT_INFO));
+
+                format = (format & SF_FORMAT_TYPEMASK) | formatInfo.format;
+
+                sfInfo.format = format;
+                if (sf_format_check(&sfInfo) && formatInfo.extension != SF_NULL) {
+                    extensions.insert(formatInfo.extension);
+                }
+            }
+
+        }
+
+        return extensions;
+    }
+};
 
 class AudioLooperUi
 {
@@ -40,6 +115,7 @@ public:
         samples = nullptr;
         loadNew = false;
         play = true;
+        supportedFormats = SupportedFormats();
     };
 
     ~AudioLooperUi() {
@@ -72,7 +148,7 @@ public:
         set_adjustment(volume->adj, 0.0, 0.0, -20.0, 6.0, 0.1, CL_CONTINUOS);
         volume->func.expose_callback = draw_knob;
         volume->func.value_changed_callback = volume_callback;
-        
+
         backset = add_button(w, "", 290, 130, 30, 30);
         backset->parent_struct = (void*)this;
         backset->scale.gravity = SOUTHWEST;
@@ -89,7 +165,7 @@ public:
         w_quit->scale.gravity = SOUTHWEST;
         w_quit->func.value_changed_callback = button_quit_callback;
         widget_show_all(w);
-        
+
         pa.startTimeout(60);
         pa.set<AudioLooperUi, &AudioLooperUi::updateUI>(this);
     }
@@ -103,6 +179,7 @@ private:
     Widget_t *volume;
     std::condition_variable *SyncWait;
     std::mutex WMutex;
+    SupportedFormats supportedFormats;
 
     void read_soundfile(const char* file) {
         // struct to hols sound file info
@@ -148,19 +225,16 @@ private:
     static void dnd_load_response(void *w_, void* user_data) {
         Widget_t *w = (Widget_t*)w_;
         AudioLooperUi *self = static_cast<AudioLooperUi*>(w->parent_struct);
-        if(user_data !=NULL) {
+        if (user_data != NULL) {
             char* dndfile = NULL;
             dndfile = strtok(*(char**)user_data, "\r\n");
             while (dndfile != NULL) {
-                if (strstr(dndfile, ".wav") ) {
+                if (self->supportedFormats.isSupported(dndfile) ) {
                     self->read_soundfile(dndfile);
                     break;
-                } else if (strstr(dndfile, ".flac")) {
-                    self->read_soundfile(dndfile);
-                    break;
-                } else if (strstr(dndfile, ".ogg")) {
-                    self->read_soundfile(dndfile);
-                    break;
+                }
+                else {
+                    std::cerr << "Unrecognized file extension: " << dndfile << std::endl;
                 }
                 dndfile = strtok(NULL, "\r\n");
             }
@@ -260,8 +334,8 @@ private:
 
     void create_waveview_image(Widget_t *w, int width, int height) {
         cairo_surface_destroy(w->image);
-        w->image = NULL;   
-        w->image = cairo_surface_create_similar (w->surface, 
+        w->image = NULL;
+        w->image = cairo_surface_create_similar (w->surface,
                             CAIRO_CONTENT_COLOR_ALPHA, width, height);
         cairo_t *cri = cairo_create (w->image);
 
@@ -335,7 +409,7 @@ private:
             (pat, 0.1,0.33 * 0.6,0.33 * 0.6,0.33 * 0.6, 0.0);
         cairo_pattern_add_color_stop_rgba
             (pat, 0.97, 0.05 * 2.0, 0.05 * 2.0, 0.05 * 2.0, 0.0);
-        cairo_pattern_add_color_stop_rgba 
+        cairo_pattern_add_color_stop_rgba
             (pat, 1, 0.05, 0.05, 0.05, 1.0);
         cairo_set_source(cr, pat);
         if (fill) cairo_fill_preserve (cr);
