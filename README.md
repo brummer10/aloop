@@ -18,7 +18,7 @@ included file browser.
 ## Building from source code
 
 ```shell
-git clone https://github.com/brummer10//aloop.git
+git clone https://github.com/brummer10/aloop.git
 cd aloop
 git submodule update --init --recursive
 make
