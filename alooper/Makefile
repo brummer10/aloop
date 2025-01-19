@@ -1,4 +1,4 @@
-	
+
 	STRIP ?= strip
 
 	# check on which OS we build
@@ -24,7 +24,7 @@ endif
 	else ifneq ($$(filter $(CPU_INFO) | grep ARM ) , )
 		ifneq ($$$(filter $(CPU_INFO)  | grep ARMv7 ) , )
 			ifneq ($$(filter $(CPU_INFO) | grep vfpd32 ) , )
-				SSE_CFLAGS = -march=armv7-a -mfpu=vfpv3 
+				SSE_CFLAGS = -march=armv7-a -mfpu=vfpv3
 			else ifneq ($$(filter $(CPU_INFO) | grep vfpv3 ) , )
 				SSE_CFLAGS = -march=armv7-a -mfpu=vfpv3
 			endif
@@ -53,18 +53,18 @@ endif
 	CFLAGS += -I. -O2 -Wall -funroll-loops `pkg-config --cflags sndfile jack`\
 	-ffast-math -fomit-frame-pointer -fstrength-reduce -fdata-sections -Wl,--gc-sections \
 	-pthread $(SSE_CFLAGS)
-	CXXFLAGS += -MMD -std=c++11 $(CFLAGS)
+	CXXFLAGS += -MMD -std=c++17 $(CFLAGS)
 	LDFLAGS += -I.  -lm -pthread -lpthread `pkg-config --libs sndfile jack`
 	ifneq ($(MACOS)$(WINDOWS),true)
 		LDFLAGS += -lrt -lc
 	endif
 	GUI_LDFLAGS += -I. -I$(HEADER_DIR) \
-	-L. $(LIB_DIR)libxputty.a  `pkg-config --static --cflags --libs cairo x11` -lm 
+	-L. $(LIB_DIR)libxputty.a  `pkg-config --static --cflags --libs cairo x11` -lm
 	# invoke build files
 	OBJECTS = xjack.c
 	DEPS = alooper.d
 
-.PHONY : mod all clean install uninstall 
+.PHONY : mod all clean install uninstall
 
 all : check $(NAME)
 	$(QUIET)mkdir -p ../bin
