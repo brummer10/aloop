@@ -71,7 +71,7 @@ jack_process(jack_nframes_t nframes, void *arg)
     float *out = static_cast<float *>(jack_port_get_buffer (out_port, nframes));
     float *out1 = static_cast<float *>(jack_port_get_buffer (out_port1, nframes));
 
-    if (( ui.samplesize && ui.samples != nullptr) && ui.play) {
+    if (( ui.samplesize && ui.samples != nullptr) && ui.play && ui.ready) {
         float fSlow0 = 0.0010000000000000009 * ui.gain;
         for (uint32_t i = 0; i<nframes; i++) {
             fRec0[0] = fSlow0 + 0.999 * fRec0[1];

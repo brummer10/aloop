@@ -110,6 +110,7 @@ public:
     float gain;
     bool loadNew;
     bool play;
+    bool ready;
 
     AudioLooperUi() {
         samplesize = 0;
@@ -120,6 +121,7 @@ public:
         samples = nullptr;
         loadNew = false;
         play = true;
+        ready = true;
         supportedFormats = SupportedFormats();
     };
 
@@ -170,7 +172,7 @@ public:
         paus->func.value_changed_callback = button_pause_callback;
         w_quit = add_button(w, "", 350, 130, 30, 30);
         w_quit->parent_struct = (void*)this;
-        widget_get_png(w_quit, LDVAR(exit_png));
+        widget_get_png(w_quit, LDVAR(exit__png));
         w_quit->scale.gravity = SOUTHWEST;
         w_quit->func.value_changed_callback = button_quit_callback;
         widget_show_all(w);
@@ -201,6 +203,7 @@ private:
         position = 0;
         std::unique_lock<std::mutex> lk(WMutex);
         SyncWait->wait(lk);
+        ready = false;
         delete[] samples;
         samples = nullptr;
 
@@ -235,6 +238,7 @@ private:
             std::cerr << "Error: could not resample file" << std::endl;
             widget_set_title(w, "alooper");
         }
+        ready = true;
     }
 
     static void dnd_load_response(void *w_, void* user_data) {
@@ -376,8 +380,9 @@ private:
         for (int c = 0; c < (int)channels; c++) {
             for (int i=0;i<width-4;i++) {
                 cairo_move_to(cri,i+2,pos);
-                cairo_line_to(cri, i+2,(float)(pos)+ (-wave_view->wave[int(c+(i*channels)*step)]*lstep));
-                cairo_line_to(cri, i+2,(float)(pos)+ (wave_view->wave[int(c+(i*channels)*step)]*lstep));
+                float w = wave_view->wave[int(c+(i*channels)*step)];
+                cairo_line_to(cri, i+2,(float)(pos)+ (-w * lstep));
+                cairo_line_to(cri, i+2,(float)(pos)+ (w * lstep));
             }
             pos += half_height_t;
         }

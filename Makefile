@@ -39,7 +39,7 @@ endif
 clean:
 	@rm -f ./libxputty/xputty/resources/dir.png
 	@rm -f ./libxputty/xputty/resources/quit.png
-	@rm -f ./libxputty/xputty/resources/exit.png
+	@rm -f ./libxputty/xputty/resources/exit_.png
 	@rm -f ./libxputty/xputty/resources/pause.png
 	@rm -f ./libxputty/xputty/resources/rewind.png
 	@rm -f ./libxputty/xputty/resources/alooper.png
