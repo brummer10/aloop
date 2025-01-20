@@ -247,8 +247,7 @@ private:
                 if (self->supportedFormats.isSupported(dndfile) ) {
                     self->read_soundfile(dndfile);
                     break;
-                }
-                else {
+                } else {
                     std::cerr << "Unrecognized file extension: " << dndfile << std::endl;
                 }
                 dndfile = strtok(NULL, "\r\n");

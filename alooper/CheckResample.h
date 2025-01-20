@@ -31,7 +31,9 @@ public:
         return impresp;
     }
 
-    ~CheckResample() {}
+    ~CheckResample() {
+        clear();
+    }
 
 private:
 
