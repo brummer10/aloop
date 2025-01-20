@@ -16,6 +16,8 @@
 #include <string>
 #include <sndfile.hh>
 
+#include "CheckResample.h"
+
 #include "xwidgets.h"
 #include "xfile-dialog.h"
 
@@ -88,12 +90,12 @@ private:
             }
 
         }
-
+        extensions.insert("ogg");
         return extensions;
     }
 };
 
-class AudioLooperUi
+class AudioLooperUi: CheckResample
 {
 public:
     Widget_t *w;
@@ -103,6 +105,7 @@ public:
     uint32_t channels;
     uint32_t samplesize;
     uint32_t samplerate;
+    uint32_t jack_sr;
     uint32_t position;
     float gain;
     bool loadNew;
@@ -110,6 +113,8 @@ public:
 
     AudioLooperUi() {
         samplesize = 0;
+        samplerate = 0;
+        jack_sr = 0;
         position = 0;
         gain = std::pow(1e+01, 0.05 * 0.0);
         samples = nullptr;
@@ -122,6 +127,10 @@ public:
         delete[] samples;
         pa.stop();
     };
+
+    void setJackSampleRate(uint32_t sr) {
+        jack_sr = sr;
+    }
 
     void createGUI(Xputty *app, std::condition_variable *Sync_) {
         SyncWait =Sync_;
@@ -213,13 +222,19 @@ private:
         samplerate = info.samplerate;
         position = 0;
         sf_close(sndfile);
+        samples = checkSampleRate(&samplesize, channels, samples, samplerate, jack_sr);
         loadNew = true;
-        adj_set_max_value(wview->adj, (float)samplesize);
-
-        update_waveview(wview, samples, samplesize);
-        char name[256];
-        strncpy(name, file, 255);
-        widget_set_title(w, basename(name));
+        if (samples) {
+            adj_set_max_value(wview->adj, (float)samplesize);
+            update_waveview(wview, samples, samplesize);
+            char name[256];
+            strncpy(name, file, 255);
+            widget_set_title(w, basename(name));
+        } else {
+            samplesize = 0;
+            std::cerr << "Error: could not resample file" << std::endl;
+            widget_set_title(w, "alooper");
+        }
     }
 
     static void dnd_load_response(void *w_, void* user_data) {

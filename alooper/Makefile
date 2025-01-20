@@ -49,8 +49,13 @@ endif
 	HEADER_DIR := $(LIB_DIR)include/
 	RESOURCES := $(wildcard $(RESOURCES_DIR)*.png)
 
+	RESAMP_DIR := ./zita-resampler-1.1.0/
+	RESAMP_SOURCES := $(wildcard $(RESAMP_DIR)*.cc)
+	RESAMP_OBJ := $(patsubst %.cc,%.o,$(RESAMP_SOURCES))
+	RESAMP_LIB := libzita-resampler.$(STATIC_LIB_EXT)
+
 	# set compile flags
-	CFLAGS += -I. -O2 -Wall -funroll-loops `pkg-config --cflags sndfile jack`\
+	CFLAGS += -I. -I./zita-resampler-1.1.0 -O2 -Wall -funroll-loops `pkg-config --cflags sndfile jack`\
 	-ffast-math -fomit-frame-pointer -fstrength-reduce -fdata-sections -Wl,--gc-sections \
 	-pthread $(SSE_CFLAGS)
 	CXXFLAGS += -MMD -std=c++17 $(CFLAGS)
@@ -62,7 +67,7 @@ endif
 	-L. $(LIB_DIR)libxputty.a  `pkg-config --static --cflags --libs cairo x11` -lm
 	# invoke build files
 	OBJECTS = xjack.c
-	DEPS = alooper.d
+	DEPS = alooper.d $(RESAMP_DIR)resampler.d  $(RESAMP_DIR)resampler_table.d
 
 .PHONY : mod all clean install uninstall
 
@@ -82,7 +87,8 @@ endif
 
 
 clean :
-	$(QUIET)rm -f *.o *.d
+	$(QUIET)rm -f *.o *.d *.a *.lib
+	$(QUIET)rm -f $(RESAMP_DIR)*.a $(RESAMP_DIR)*.lib $(RESAMP_DIR)*.o $(RESAMP_DIR)*.d
 	$(QUIET)rm -f $(NAME)
 	$(QUIET)rm -rf ../bin
 
@@ -101,9 +107,18 @@ uninstall :
 	$(QUIET)rm -rf $(DESTDIR)$(DESKAPPS_DIR)/$(NAME).desktop
 	$(QUIET)rm -rf $(DESTDIR)$(PIXMAPS_DIR)/$(NAME).svg
 
-$(NAME) : $(OBJECTS)
+$(RESAMP_OBJ): $(RESAMP_SOURCES)
+	@$(ECHO) "Building object file $@ $(reset)"
+	$(QUIET)$(CXX) $(CXXFLAGS) -MMD  -c $(patsubst %.o,%.cc,$@) -o $@ -I./zita-resampler-1.1.0
+
+$(RESAMP_LIB): $(RESAMP_OBJ)
+	@$(B_ECHO) "Build static library $@ $(reset)"
+	$(QUIET)$(AR) rcs $(RESAMP_LIB) $(RESAMP_OBJ)
+	@$(B_ECHO) "=================== DONE =======================$(reset)"
+
+$(NAME) : $(OBJECTS) $(RESAMP_LIB)
 	@$(B_ECHO) "Build $@ $(reset)"
-	$(QUIET)$(CXX) $(CXXFLAGS) $(OBJECTS) -o $(NAME) $(LDFLAGS) $(GUI_LDFLAGS)
+	$(QUIET)$(CXX) $(CXXFLAGS) $(OBJECTS) -L. $(RESAMP_LIB) -o $(NAME) $(LDFLAGS) $(GUI_LDFLAGS)
 	$(QUIET)$(STRIP) -s -x -X -R .note.ABI-tag $(NAME)
 	@$(B_ECHO) "=================== DONE =======================$(reset)"
 

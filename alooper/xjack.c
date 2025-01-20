@@ -54,6 +54,7 @@ int
 jack_srate_callback(jack_nframes_t samplerate, void* arg)
 {
     fprintf (stderr, "Samplerate %iHz \n", samplerate);
+    ui.setJackSampleRate(samplerate);
     return 0;
 }
 
