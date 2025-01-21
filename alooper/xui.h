@@ -51,6 +51,10 @@ private:
     std::set<std::string> getSupportedFileExtensions() {
         std::set<std::string> extensions;
 
+        // Get the number of supported simple formats
+        int simpleFormatCount;
+        sf_command(SF_NULL, SFC_GET_SIMPLE_FORMAT_COUNT, &simpleFormatCount, sizeof(int));
+
         // Get the number of supported major formats
         int majorFormatCount;
         sf_command(SF_NULL, SFC_GET_FORMAT_MAJOR_COUNT, &majorFormatCount, sizeof(int));
@@ -59,15 +63,24 @@ private:
         int subFormatCount;
         sf_command(SF_NULL, SFC_GET_FORMAT_SUBTYPE_COUNT, &subFormatCount, sizeof(int));
 
+        // Get information about each simple format
+        for (int i = 0; i < simpleFormatCount; ++i) {
+            SF_FORMAT_INFO formatInfo;
+            formatInfo.format = i;
+            sf_command(SF_NULL, SFC_GET_SIMPLE_FORMAT, &formatInfo, sizeof(formatInfo));
+
+            if (formatInfo.extension != SF_NULL)
+                extensions.insert(formatInfo.extension);
+        }
+
         // Get information about each major format
         for (int i = 0; i < majorFormatCount; i++) {
             SF_FORMAT_INFO formatInfo;
             formatInfo.format = i;
             sf_command(SF_NULL, SFC_GET_FORMAT_MAJOR, &formatInfo, sizeof(formatInfo));
 
-            if (formatInfo.extension != SF_NULL) {
+            if (formatInfo.extension != SF_NULL)
                 extensions.insert(formatInfo.extension);
-            }
         }
 
         // Get information about each sub format
@@ -76,13 +89,9 @@ private:
             formatInfo.format = j;
             sf_command(SF_NULL, SFC_GET_FORMAT_SUBTYPE, &formatInfo, sizeof(SF_FORMAT_INFO));
 
-            if (formatInfo.extension != SF_NULL) {
+            if (formatInfo.extension != SF_NULL)
                 extensions.insert(formatInfo.extension);
-            }
         }
-
-        if (extensions.count("oga") >= 1)
-            extensions.insert("ogg");
 
         return extensions;
     }
