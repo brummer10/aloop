@@ -38,9 +38,17 @@ float fRec0[2] = {0};
 void
 jack_shutdown (void *arg)
 {
-    ui.pa.stop();
-    quit(ui.w);
-    exit (1);
+    fprintf (stderr, "jack shutdown, exit now \n");
+#if defined(__linux__) || defined(__FreeBSD__) || \
+    defined(__NetBSD__) || defined(__OpenBSD__)
+            XLockDisplay(app.dpy);
+#endif
+    ui.onExit();
+#if defined(__linux__) || defined(__FreeBSD__) || \
+    defined(__NetBSD__) || defined(__OpenBSD__)
+            XFlush(app.dpy);
+            XUnlockDisplay(app.dpy);
+#endif
 }
 
 int
@@ -96,19 +104,33 @@ jack_process(jack_nframes_t nframes, void *arg)
 void
 signal_handler (int sig)
 {
-    jack_client_close (client);
-    if (sig == SIGTERM) {
-        ui.pa.stop();
-        quit(ui.w);
+    switch (sig) {
+        case SIGINT:
+        case SIGHUP:
+        case SIGTERM:
+        case SIGQUIT:
+            fprintf (stderr, "signal %i received, exiting ...\n", sig);
+#if defined(__linux__) || defined(__FreeBSD__) || \
+    defined(__NetBSD__) || defined(__OpenBSD__)
+            XLockDisplay(app.dpy);
+#endif
+            ui.onExit();
+#if defined(__linux__) || defined(__FreeBSD__) || \
+    defined(__NetBSD__) || defined(__OpenBSD__)
+            XFlush(app.dpy);
+            XUnlockDisplay(app.dpy);
+#endif
+        break;
+        default:
+        break;
     }
-    fprintf (stderr, "\n signal %i received, exiting ...\n", sig);
-    exit (0);
 }
 
 int
 main (int argc, char *argv[])
 {
-#if defined(__linux__) || defined(__FreeBSD__) || defined(__NetBSD__) || defined(__OpenBSD__)
+#if defined(__linux__) || defined(__FreeBSD__) || \
+    defined(__NetBSD__) || defined(__OpenBSD__)
     if(0 == XInitThreads()) 
         fprintf(stderr, "Warning: XInitThreads() failed\n");
 #endif
@@ -117,8 +139,7 @@ main (int argc, char *argv[])
 
     if ((client = jack_client_open ("aloop", JackNoStartServer, NULL)) == 0) {
         fprintf (stderr, "jack server not running?\n");
-        ui.pa.stop();
-        quit(ui.w);
+        ui.onExit();
         return 1;
     }
 
@@ -140,8 +161,7 @@ main (int argc, char *argv[])
 
     if (jack_activate (client)) {
         fprintf (stderr, "cannot activate client");
-        ui.pa.stop();
-        quit(ui.w);
+        ui.onExit();
         return 1;
     }
 

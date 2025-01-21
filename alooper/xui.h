@@ -130,6 +130,11 @@ public:
         pa.stop();
     };
 
+    void onExit() {
+        pa.stop();
+        quit(w);
+    }
+
     void setJackSampleRate(uint32_t sr) {
         jack_sr = sr;
     }
@@ -272,12 +277,14 @@ private:
     static void dummy_callback(void *w_, void* user_data) {}
 
     void updateUI() {
-#if defined(__linux__) || defined(__FreeBSD__) || defined(__NetBSD__) || defined(__OpenBSD__)
+#if defined(__linux__) || defined(__FreeBSD__) || \
+    defined(__NetBSD__) || defined(__OpenBSD__)
         XLockDisplay(w->app->dpy);
         wview->func.adj_callback = dummy_callback;
 #endif
         adj_set_value(wview->adj, (float) position);
-#if defined(__linux__) || defined(__FreeBSD__) || defined(__NetBSD__) || defined(__OpenBSD__)
+#if defined(__linux__) || defined(__FreeBSD__) || \
+    defined(__NetBSD__) || defined(__OpenBSD__)
         expose_widget(wview);
         XFlush(w->app->dpy);
         wview->func.adj_callback = transparent_draw;

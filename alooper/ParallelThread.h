@@ -341,9 +341,6 @@ private:
         };
         pRun.store(true, std::memory_order_release);
         pThd = std::thread([this]() {
-            #if __cplusplus <= 201703L
-            std::unique_lock<std::mutex> lk(pWaitWork);
-            #endif
             while (pRun.load(std::memory_order_acquire)) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(timeoutPeriod));
                 process();

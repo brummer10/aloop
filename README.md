@@ -8,6 +8,7 @@ aloop is a audio file looper for JackAudioConnectionKit. It support all file for
 libsndfile. Files could be load by drag n' drop them into the aloop GUI, or by select them with the
 included file browser. 
 
+aloop resample files on load, using zita-resampler, to match the jack sample rate, when needed. 
 
 ## Dependencies
 

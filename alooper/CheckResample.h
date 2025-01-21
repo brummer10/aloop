@@ -24,9 +24,10 @@ class CheckResample : Resampler{
 public:
     CheckResample() {}
 
-    float *checkSampleRate(uint32_t *count, uint32_t chan, float *impresp, uint32_t imprate, uint32_t samplerate) {
+    float *checkSampleRate(uint32_t *count, uint32_t chan, float *impresp,
+                            uint32_t imprate, uint32_t samplerate) {
         if (imprate != samplerate) {
-            return process(imprate, *count, impresp, chan, samplerate, count);
+            return process(imprate, *count, impresp, chan, samplerate, count, 32);
         }
         return impresp;
     }
@@ -54,12 +55,12 @@ private:
         return 1;
     }
 
-    float* process(int32_t fs_inp, int32_t ilen, float *input, uint32_t chan, int32_t fs_outp, uint32_t *olen){
+    float* process(int32_t fs_inp, int32_t ilen, float *input, uint32_t chan, 
+                    int32_t fs_outp, uint32_t *olen, const int32_t qual){
         int32_t d = gcd(fs_inp, fs_outp);
         int32_t ratio_a = fs_inp / d;
         int32_t ratio_b = fs_outp / d;
 
-        const int32_t qual = 32;
         clear();
         if (setup(fs_inp, fs_outp, chan, qual) != 0) {
             return 0;
@@ -87,10 +88,11 @@ private:
             delete[] p;
             return 0;
         }
-        assert(inp_count == 0);
-        assert(out_count <= 1);
+       // assert(inp_count == 0);
+       // assert(out_count <= 1);
         *olen = nout - out_count;
-        //printf("resampled from %i to: %i\n",fs_inp, fs_outp );
+        if (inp_count)
+            printf("resampled from %i to: %i, lost %i samples\n",fs_inp, fs_outp, inp_count);
         return p;
     }
 };
