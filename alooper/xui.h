@@ -28,8 +28,6 @@
 
 class SupportedFormats {
 public:
-    std::set<std::string> supportedExtensions;
-
     SupportedFormats() {
         supportedExtensions = getSupportedFileExtensions();
     }
@@ -48,11 +46,10 @@ public:
     }
 
 private:
+    std::set<std::string> supportedExtensions;
+
     std::set<std::string> getSupportedFileExtensions() {
         std::set<std::string> extensions;
-        SF_INFO sfInfo;
-        int format;
-
 
         // Get the number of supported major formats
         int majorFormatCount;
@@ -62,35 +59,31 @@ private:
         int subFormatCount;
         sf_command(SF_NULL, SFC_GET_FORMAT_SUBTYPE_COUNT, &subFormatCount, sizeof(int));
 
-        sfInfo.channels = 1;
-
         // Get information about each major format
-        for (int i = 0; i < majorFormatCount; ++i) {
+        for (int i = 0; i < majorFormatCount; i++) {
             SF_FORMAT_INFO formatInfo;
             formatInfo.format = i;
             sf_command(SF_NULL, SFC_GET_FORMAT_MAJOR, &formatInfo, sizeof(formatInfo));
 
-            format = formatInfo.format;
             if (formatInfo.extension != SF_NULL) {
                 extensions.insert(formatInfo.extension);
             }
-
-            // Get information about each sub format
-            for (int j = 0; j < subFormatCount; ++j) {
-                SF_FORMAT_INFO formatInfo;
-                formatInfo.format = j;
-                sf_command(SF_NULL, SFC_GET_FORMAT_SUBTYPE, &formatInfo, sizeof(SF_FORMAT_INFO));
-
-                format = (format & SF_FORMAT_TYPEMASK) | formatInfo.format;
-
-                sfInfo.format = format;
-                if (sf_format_check(&sfInfo) && formatInfo.extension != SF_NULL) {
-                    extensions.insert(formatInfo.extension);
-                }
-            }
-
         }
-        extensions.insert("ogg");
+
+        // Get information about each sub format
+        for (int j = 0; j < subFormatCount; j++) {
+            SF_FORMAT_INFO formatInfo;
+            formatInfo.format = j;
+            sf_command(SF_NULL, SFC_GET_FORMAT_SUBTYPE, &formatInfo, sizeof(SF_FORMAT_INFO));
+
+            if (formatInfo.extension != SF_NULL) {
+                extensions.insert(formatInfo.extension);
+            }
+        }
+
+        if (extensions.count("oga") >= 1)
+            extensions.insert("ogg");
+
         return extensions;
     }
 };
@@ -122,7 +115,6 @@ public:
         loadNew = false;
         play = true;
         ready = true;
-        supportedFormats = SupportedFormats();
     };
 
     ~AudioLooperUi() {
