@@ -220,13 +220,12 @@ private:
             return ;
         }
         if (info.channels > 2) {
-            std::cerr << "Error: Maximal two channels been supported!" << std::endl;
+            std::cerr << "Error: only two channels maximum are supported!" << std::endl;
             return ;
         }
         samples = new float[info.frames * info.channels];
-        sf_readf_float(sndfile, &samples[0], info.frames );
+        samplesize = (uint32_t) sf_readf_float(sndfile, &samples[0], info.frames);
         channels = info.channels;
-        samplesize = info.frames;
         samplerate = info.samplerate;
         position = 0;
         sf_close(sndfile);
