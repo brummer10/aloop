@@ -38,7 +38,7 @@ public:
 
 private:
 
-    static uint32_t gcd (int32_t a, int32_t b) {
+    static uint32_t gcd (uint32_t a, uint32_t b) {
         if (a == 0) return b;
         if (b == 0) return a;
         while (1) {
@@ -57,9 +57,9 @@ private:
 
     float* process(int32_t fs_inp, int32_t ilen, float *input, uint32_t chan, 
                     int32_t fs_outp, uint32_t *olen, const int32_t qual){
-        int32_t d = gcd(fs_inp, fs_outp);
-        int32_t ratio_a = fs_inp / d;
-        int32_t ratio_b = fs_outp / d;
+        uint32_t d = gcd(fs_inp, fs_outp);
+        uint32_t ratio_a = fs_inp / d;
+        uint32_t ratio_b = fs_outp / d;
 
         clear();
         if (setup(fs_inp, fs_outp, chan, qual) != 0) {
@@ -75,7 +75,7 @@ private:
             return 0;
         }
         inp_count = ilen;
-        int32_t nout = out_count = (ilen * ratio_b + ratio_a - 1) / ratio_a;
+        uint32_t nout = out_count = (ilen * ratio_b + ratio_a - 1) / ratio_a;
         inp_data = input;
         float *p = out_data = new float[out_count*chan];
         if (Resampler::process() != 0) {

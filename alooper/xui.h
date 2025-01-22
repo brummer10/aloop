@@ -105,7 +105,7 @@ public:
 
     float *samples;
     uint32_t channels;
-    long int samplesize;
+    uint32_t samplesize;
     uint32_t samplerate;
     uint32_t jack_sr;
     uint32_t position;
@@ -225,7 +225,12 @@ private:
             std::cerr << "Error: only two channels maximum are supported!" << std::endl;
             return ;
         }
-        samples = new float[info.frames * info.channels];
+        try {
+            samples = new float[info.frames * info.channels];
+        } catch (...) {
+            std::cerr << "Error: could load file" << std::endl;
+            return;
+        }
         memset(samples, 0, info.frames * info.channels * sizeof(float));
         samplesize = (uint32_t) sf_readf_float(sndfile, &samples[0], info.frames);
         if (!samplesize ) samplesize = info.frames;
@@ -233,7 +238,7 @@ private:
         samplerate = info.samplerate;
         position = 0;
         sf_close(sndfile);
-        samples = checkSampleRate((uint32_t*)&samplesize, channels, samples, samplerate, jack_sr);
+        samples = checkSampleRate(&samplesize, channels, samples, samplerate, jack_sr);
         loadNew = true;
         if (samples) {
             adj_set_max_value(wview->adj, (float)samplesize);
