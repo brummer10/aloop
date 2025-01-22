@@ -105,7 +105,7 @@ public:
 
     float *samples;
     uint32_t channels;
-    uint32_t samplesize;
+    long int samplesize;
     uint32_t samplerate;
     uint32_t jack_sr;
     uint32_t position;
@@ -152,7 +152,8 @@ public:
         wview = add_waveview(w, "", 20, 20, 360, 100);
         wview->scale.gravity = NORTHWEST;
         wview->parent_struct = (void*)this;
-        wview->adj = add_adjustment(wview,0.0, 0.0, 0.0, 1000.0,1.0, CL_METER);
+        wview->adj_y = add_adjustment(wview,0.0, 0.0, 0.0, 1000.0,1.0, CL_METER);
+        wview->adj = wview->adj_y;
         wview->func.expose_callback = draw_wview;
         filebutton = add_file_button(w, 20, 130, 30, 30, getenv("HOME") ? getenv("HOME") : "/", "audio");
         filebutton->scale.gravity = SOUTHEAST;
@@ -225,12 +226,14 @@ private:
             return ;
         }
         samples = new float[info.frames * info.channels];
+        memset(samples, 0, info.frames * info.channels * sizeof(float));
         samplesize = (uint32_t) sf_readf_float(sndfile, &samples[0], info.frames);
+        if (!samplesize ) samplesize = info.frames;
         channels = info.channels;
         samplerate = info.samplerate;
         position = 0;
         sf_close(sndfile);
-        samples = checkSampleRate(&samplesize, channels, samples, samplerate, jack_sr);
+        samples = checkSampleRate((uint32_t*)&samplesize, channels, samples, samplerate, jack_sr);
         loadNew = true;
         if (samples) {
             adj_set_max_value(wview->adj, (float)samplesize);
@@ -481,9 +484,7 @@ private:
         Widget_t *w = (Widget_t*)w_;
         AudioLooperUi *self = static_cast<AudioLooperUi*>(w->parent_struct);
         if (w->flags & HAS_POINTER && !*(int*)user_data){
-            Widget_t *p = (Widget_t*)w->parent;
-            self->pa.stop();
-            quit(p);
+            self->onExit();
         }
     }
 
