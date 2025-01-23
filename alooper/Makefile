@@ -14,6 +14,13 @@ else
   CPU_INFO = cat /proc/cpuinfo | grep flags
 endif
 
+ifeq ($(MAKECMDGOALS),jack)
+  USEAPI = jack
+  CXXFLAGS += -DJACKAPI
+else
+  USEAPI = portaudio-2.0
+endif
+
 	# check CPU and supported optimization flags
 	ifneq ($$(filter $(CPU_INFO) | grep sse3 ) , )
 		SSE_CFLAGS = -msse3 -mfpmath=sse
@@ -55,18 +62,22 @@ endif
 	RESAMP_LIB := libzita-resampler.$(STATIC_LIB_EXT)
 
 	# set compile flags
-	CFLAGS += -I. -I./zita-resampler-1.1.0 -O2 -Wall -funroll-loops `pkg-config --cflags sndfile jack`\
+	CFLAGS += -I. -I./zita-resampler-1.1.0 -O2 -Wall -funroll-loops `pkg-config --cflags sndfile $(USEAPI)`\
 	-ffast-math -fomit-frame-pointer -fstrength-reduce -fdata-sections -Wl,--gc-sections \
 	-pthread $(SSE_CFLAGS)
 	CXXFLAGS += -MMD -std=c++17 $(CFLAGS)
-	LDFLAGS += -I.  -lm -pthread -lpthread `pkg-config --libs sndfile jack`
+	LDFLAGS += -I.  -lm -pthread -lpthread `pkg-config --libs sndfile $(USEAPI)`
 	ifneq ($(MACOS)$(WINDOWS),true)
 		LDFLAGS += -lrt -lc
 	endif
 	GUI_LDFLAGS += -I. -I$(HEADER_DIR) \
 	-L. $(LIB_DIR)libxputty.a  `pkg-config --static --cflags --libs cairo x11` -lm
 	# invoke build files
+ifeq ($(MAKECMDGOALS),jack)
 	OBJECTS = xjack.c
+else
+	OBJECTS = xpa.c
+endif
 	DEPS = alooper.d $(RESAMP_DIR)resampler.d  $(RESAMP_DIR)resampler_table.d
 
 .PHONY : mod all clean install uninstall
@@ -77,6 +88,8 @@ all : check $(NAME)
 	@if ! [ -f ../bin/$(NAME) ]; then \
 		$(R_ECHO) "Sorry, build fail$(reset)"; \
 	fi
+
+jack : all
 
 -include $(DEPS)
 
@@ -101,6 +114,7 @@ install :
 	$(QUIET)cp $(NAME).desktop $(DESTDIR)$(DESKAPPS_DIR)
 	$(QUIET)mkdir -p $(DESTDIR)$(PIXMAPS_DIR)
 	$(QUIET)cp $(NAME).svg $(DESTDIR)$(PIXMAPS_DIR)
+	$(QUIET)update-desktop-database || true
 
 uninstall :
 	$(QUIET)rm -rf $(DESTDIR)$(BIN_DIR)/$(NAME)

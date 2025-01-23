@@ -19,6 +19,9 @@
 #include <jack/jack.h>
 
 #include "ParallelThread.h"
+typedef void PaStream;
+typedef int PaError;
+static PaError Pa_IsStreamActive(PaStream* x) { return true;}
 #include "xui.h"
 
 
@@ -177,6 +180,15 @@ main (int argc, char *argv[])
         fprintf(stderr, "output connected to system:playback\n");
         jack_connect(client,"aloop:out_0", "system:playback_1");
         jack_connect(client,"aloop:out_1", "system:playback_2");
+    }
+
+    if (argv[1])
+#ifdef __XDG_MIME_H__
+    if(strstr(xdg_mime_get_mime_type_from_file_name(argv[1]), "audio")) {
+#else
+    if( access(argv[1], F_OK ) != -1 ) {
+#endif
+        ui.dialog_response(ui.w, (void*) &argv[1]);
     }
 
     main_run(&app);

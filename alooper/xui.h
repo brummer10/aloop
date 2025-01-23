@@ -5,7 +5,9 @@
  *
  * Copyright (C) 2024 brummer <brummer@web.de>
  */
-
+#ifndef JACKAPI
+#include <portaudio.h>
+#endif
 #include <algorithm>
 #include <cctype>
 #include <condition_variable>
@@ -124,6 +126,7 @@ public:
         loadNew = false;
         play = true;
         ready = true;
+        stream = nullptr;
     };
 
     ~AudioLooperUi() {
@@ -138,6 +141,21 @@ public:
 
     void setJackSampleRate(uint32_t sr) {
         jack_sr = sr;
+    }
+
+    void setPaStream(PaStream* stream_) {
+        stream = stream_;
+    }
+
+    static void dialog_response(void *w_, void* user_data) {
+        Widget_t *w = (Widget_t*)w_;
+        AudioLooperUi *self = static_cast<AudioLooperUi*>(w->parent_struct);
+        if (!Pa_IsStreamActive(self->stream)) return;
+        if(user_data !=NULL) {
+            self->read_soundfile(*(const char**)user_data);
+        } else {
+            fprintf(stderr, "no file selected\n");
+        }
     }
 
     void createGUI(Xputty *app, std::condition_variable *Sync_) {
@@ -198,6 +216,7 @@ private:
     std::condition_variable *SyncWait;
     std::mutex WMutex;
     SupportedFormats supportedFormats;
+    PaStream* stream;
 
     void read_soundfile(const char* file) {
         // struct to hols sound file info
@@ -218,7 +237,7 @@ private:
         SNDFILE *sndfile = sf_open(file, SFM_READ, &info);
 
         if (!sndfile) {
-            std::cerr << "Error: could not open file" << std::endl;
+            std::cerr << "Error: could not open file" << sf_error (sndfile) << std::endl;
             return ;
         }
         if (info.channels > 2) {
@@ -257,6 +276,7 @@ private:
     static void dnd_load_response(void *w_, void* user_data) {
         Widget_t *w = (Widget_t*)w_;
         AudioLooperUi *self = static_cast<AudioLooperUi*>(w->parent_struct);
+        if (!Pa_IsStreamActive(self->stream)) return;
         if (user_data != NULL) {
             char* dndfile = NULL;
             dndfile = strtok(*(char**)user_data, "\r\n");
@@ -269,16 +289,6 @@ private:
                 }
                 dndfile = strtok(NULL, "\r\n");
             }
-        }
-    }
-
-    static void dialog_response(void *w_, void* user_data) {
-        Widget_t *w = (Widget_t*)w_;
-        AudioLooperUi *self = static_cast<AudioLooperUi*>(w->parent_struct);
-        if(user_data !=NULL) {
-            self->read_soundfile(*(const char**)user_data);
-        } else {
-            fprintf(stderr, "no file selected\n");
         }
     }
 

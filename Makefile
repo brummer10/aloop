@@ -28,7 +28,7 @@ ifeq (,$(filter $(NOGOAL),$(MAKECMDGOALS)))
 ifeq (,$(wildcard ./libxputty/xputty/resources/dir.png))
 	@cp ./alooper/Resources/*.png ./libxputty/xputty/resources/
 endif
-	@exec $(MAKE) --no-print-directory -j 1 -C $@ $(MAKECMDGOALS)
+	@exec $(MAKE) --no-print-directory -j 1 -C $@ $(filter-out jack,$(MAKECMDGOALS))
 endif
 
 $(SUBDIR): libxputty
