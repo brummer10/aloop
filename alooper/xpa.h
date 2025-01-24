@@ -34,17 +34,13 @@
 class XPa {
 public:
 
-    XPa(){
+    XPa(const char* cname){
+        PaJack_SetClientName (cname);
         init();
         SampleRate = 0;
     };
 
     ~XPa(){Pa_Terminate();};
-
-    // set the client name to be used within jackd
-    void setClientName(const char* cname) {
-        PaJack_SetClientName (cname);
-    }
 
     // open a audio stream for input/output channels and set the audio process callback
     bool openStream(uint32_t ichannels, uint32_t ochannels, PaStreamCallback *process, void* arg) {

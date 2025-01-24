@@ -100,8 +100,7 @@ int main(int argc, char *argv[]){
     signal (SIGHUP, signal_handler);
     signal (SIGINT, signal_handler);
 
-    XPa xpa;
-    xpa.setClientName ("alooper");
+    XPa xpa ("alooper");
     if(!xpa.openStream(0, 2, &process, (void*) &Sync)) ui.onExit();
 
     ui.setJackSampleRate(xpa.getSampleRate());
