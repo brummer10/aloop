@@ -1,3 +1,4 @@
+
 /*
  * xui.h
  *
@@ -5,6 +6,7 @@
  *
  * Copyright (C) 2024 brummer <brummer@web.de>
  */
+
 #ifndef JACKAPI
 #include <portaudio.h>
 #endif
@@ -307,7 +309,7 @@ private:
     }
 
     // load next file from Play List, called from background thread,
-    // triggered by audio server when end of file is reached
+    // triggered by audio server when end of current file is reached
     void loadFromPlayList() {
         if (((PlayList.size() < 2) || !usePlayList) && !forceReload) return;
         forceReload = false;
@@ -565,6 +567,7 @@ private:
                       Button callbacks 
 ****************************************************************/
 
+    // quit
     static void button_quit_callback(void *w_, void* user_data) {
         Widget_t *w = (Widget_t*)w_;
         AudioLooperUi *self = static_cast<AudioLooperUi*>(w->parent_struct);
@@ -573,6 +576,7 @@ private:
         }
     }
 
+    // pause
     static void button_pause_callback(void *w_, void* user_data) {
         Widget_t *w = (Widget_t*)w_;
         AudioLooperUi *self = static_cast<AudioLooperUi*>(w->parent_struct);
@@ -581,6 +585,7 @@ private:
         } else self->play = true;
     }
 
+    // move playhead to start position 
     static void button_backset_callback(void *w_, void* user_data) {
         Widget_t *w = (Widget_t*)w_;
         AudioLooperUi *self = static_cast<AudioLooperUi*>(w->parent_struct);
@@ -589,6 +594,7 @@ private:
         }
     }
 
+    // show the Play List window
     static void button_lview_callback(void *w_, void* user_data) {
         Widget_t *w = (Widget_t*)w_;
         AudioLooperUi *self = static_cast<AudioLooperUi*>(w->parent_struct);
@@ -605,6 +611,7 @@ private:
         }
     }
 
+    // volume control
     static void volume_callback(void *w_, void* user_data) {
         Widget_t *w = (Widget_t*)w_;
         AudioLooperUi *self = static_cast<AudioLooperUi*>(w->parent_struct);

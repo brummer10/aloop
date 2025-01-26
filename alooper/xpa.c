@@ -23,7 +23,7 @@
 
 AudioLooperUi ui;
 
-
+// the portaudio server process callback
 static int process(const void* inputBuffer, void* outputBuffer,
     unsigned long frames, const PaStreamCallbackTimeInfo* timeInfo,
     PaStreamCallbackFlags statusFlags, void* data) {
@@ -59,6 +59,7 @@ static int process(const void* inputBuffer, void* outputBuffer,
     return 0;
 }
 
+// catch signals and exit clean
 void
 signal_handler (int sig)
 {

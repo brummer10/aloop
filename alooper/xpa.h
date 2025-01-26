@@ -8,10 +8,10 @@
  */
 
 /****************************************************************
-  XPa - a C++ wrapper for portaudio
+  XPa - a C++ wrapper for the portaudio server
 
   silent the portaudio device probe messages
-  connection preference is set to jackd, pulse audio, alsa 
+  connection preference is set to 1.) jackd, 2.) pulse audio, 3.) alsa 
 
 ****************************************************************/
 
@@ -128,6 +128,8 @@ private:
         uint32_t SampleRate;
     };
 
+    // initialise the portaudio server,
+    // catch the falling device probe messages  
     void init() {
         char buffer[1024];
         auto fp = fmemopen(buffer, 1024, "w");
