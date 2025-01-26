@@ -46,7 +46,10 @@ static int process(const void* inputBuffer, void* outputBuffer,
             }
             fRec0[1] = fRec0[0];
             ui.position++;
-            if (ui.position > ui.samplesize) ui.position = 0;
+            if (ui.position > ui.samplesize) {
+                ui.position = 0;
+                if (ui.pl.getProcess()) ui.pl.runProcess();
+            }
         }
     } else {
         memset(out, 0.0, (uint32_t)frames * 2 * sizeof(float));
@@ -119,6 +122,7 @@ int main(int argc, char *argv[]){
  
     main_run(&app);
    
+    ui.pl.stop();
     ui.pa.stop();
     main_quit(&app);
     xpa.stopStream();

@@ -43,6 +43,9 @@ clean:
 	@rm -f ./libxputty/xputty/resources/pause.png
 	@rm -f ./libxputty/xputty/resources/rewind.png
 	@rm -f ./libxputty/xputty/resources/alooper.png
+	@rm -f ./libxputty/xputty/resources/menu.png
+	@rm -f ./libxputty/xputty/resources/up.png
+	@rm -f ./libxputty/xputty/resources/down.png
 
 
 features:

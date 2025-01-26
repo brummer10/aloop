@@ -94,7 +94,10 @@ jack_process(jack_nframes_t nframes, void *arg)
             }
             fRec0[1] = fRec0[0];
             ui.position++;
-            if (ui.position > ui.samplesize) ui.position = 0;
+            if (ui.position > ui.samplesize) {
+                ui.position = 0;
+                if (ui.pl.getProcess()) ui.pl.runProcess();
+            }
         }
     } else {
         memset(out, 0.0, nframes * sizeof(float));

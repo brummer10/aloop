@@ -21,6 +21,12 @@ else
   USEAPI = portaudio-2.0
 endif
 
+ifeq ($(MAKECMDGOALS),debug)
+  CXXFLAGS += -g -DDEBUG
+else
+  CXXFLAGS += -O2 -DNDEBUG
+endif
+
 	# check CPU and supported optimization flags
 	ifneq ($$(filter $(CPU_INFO) | grep sse3 ) , )
 		SSE_CFLAGS = -msse3 -mfpmath=sse
@@ -62,11 +68,11 @@ endif
 	RESAMP_LIB := libzita-resampler.$(STATIC_LIB_EXT)
 
 	# set compile flags
-	CFLAGS += -I. -I./zita-resampler-1.1.0 -O2 -Wall -funroll-loops `pkg-config --cflags sndfile $(USEAPI)`\
+	CFLAGS += -I. -I./zita-resampler-1.1.0 -Wall -funroll-loops `pkg-config --cflags sndfile $(USEAPI)`\
 	-ffast-math -fomit-frame-pointer -fstrength-reduce -fdata-sections -Wl,--gc-sections \
 	-pthread $(SSE_CFLAGS)
 	CXXFLAGS += -MMD -std=c++17 $(CFLAGS)
-	LDFLAGS += -I.  -lm -pthread -lpthread `pkg-config --libs sndfile $(USEAPI)`
+	LDFLAGS += -I. -lm -pthread -lpthread `pkg-config --libs sndfile $(USEAPI)`
 	ifneq ($(MACOS)$(WINDOWS),true)
 		LDFLAGS += -lrt -lc
 	endif
@@ -90,6 +96,8 @@ all : check $(NAME)
 	fi
 
 jack : all
+
+debug : all
 
 -include $(DEPS)
 
@@ -133,7 +141,9 @@ $(RESAMP_LIB): $(RESAMP_OBJ)
 $(NAME) : $(OBJECTS) $(RESAMP_LIB)
 	@$(B_ECHO) "Build $@ $(reset)"
 	$(QUIET)$(CXX) $(CXXFLAGS) $(OBJECTS) -L. $(RESAMP_LIB) -o $(NAME) $(LDFLAGS) $(GUI_LDFLAGS)
+ifneq ($(MAKECMDGOALS),debug)
 	$(QUIET)$(STRIP) -s -x -X -R .note.ABI-tag $(NAME)
+endif
 	@$(B_ECHO) "=================== DONE =======================$(reset)"
 
 doc:

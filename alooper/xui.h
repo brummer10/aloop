@@ -15,6 +15,7 @@
 #include <iostream>
 #include <mutex>
 #include <set>
+#include <vector>
 #include <string>
 #include <sndfile.hh>
 
@@ -104,6 +105,7 @@ class AudioLooperUi: CheckResample
 public:
     Widget_t *w;
     ParallelThread pa;
+    ParallelThread pl;
 
     float *samples;
     uint32_t channels;
@@ -121,22 +123,49 @@ public:
         samplerate = 0;
         jack_sr = 0;
         position = 0;
+        playNow = 0;
         gain = std::pow(1e+01, 0.05 * 0.0);
         samples = nullptr;
         loadNew = false;
         play = true;
         ready = true;
+        usePlayList = false;
         stream = nullptr;
     };
 
     ~AudioLooperUi() {
         delete[] samples;
+        pl.stop();
         pa.stop();
+        PlayList.clear();
     };
 
     void onExit() {
+        pl.stop();
         pa.stop();
         quit(w);
+    }
+
+    void loadFromPlayList() {
+        if ((PlayList.size() < 2) || !usePlayList) return;
+        playNow++;
+        lfile = PlayList.begin()+playNow;
+        if (lfile >= PlayList.end()) {
+            lfile = PlayList.begin();
+            playNow = 0;
+        }
+        #if defined(__linux__) || defined(__FreeBSD__) || \
+            defined(__NetBSD__) || defined(__OpenBSD__)
+        XLockDisplay(w->app->dpy);
+        #endif
+        listbox_set_active_entry(playList, playNow);
+        #if defined(__linux__) || defined(__FreeBSD__) || \
+            defined(__NetBSD__) || defined(__OpenBSD__)
+        XFlush(w->app->dpy);
+        XUnlockDisplay(w->app->dpy);
+        #endif
+
+        read_soundfile(std::get<1>(*lfile).c_str());
     }
 
     void setJackSampleRate(uint32_t sr) {
@@ -153,6 +182,17 @@ public:
         if (!Pa_IsStreamActive(self->stream)) return;
         if(user_data !=NULL) {
             self->read_soundfile(*(const char**)user_data);
+            self->PlayList.push_back(std::tuple<std::string, std::string>(
+                std::string(basename(*(char**)user_data)), std::string(*(const char**)user_data)));
+            auto it = self->PlayList.end()-1;
+            listbox_add_entry(self->playList, std::get<0>(*it).c_str());
+            self->playNow = self->PlayList.size()-1;
+            Metrics_t metrics;
+            os_get_window_metrics(self->playList, &metrics);
+            if (metrics.visible) {
+                listbox_set_active_entry(self->playList, self->playNow);
+                widget_show_all(self->playList);
+            }
         } else {
             fprintf(stderr, "no file selected\n");
         }
@@ -160,24 +200,33 @@ public:
 
     void createGUI(Xputty *app, std::condition_variable *Sync_) {
         SyncWait =Sync_;
-        w = create_window(app, DefaultRootWindow(app->dpy), 0, 0, 400, 170);
+        w = create_window(app, os_get_root_window(app, IS_WINDOW), 0, 0, 400, 170);
         widget_set_title(w, "alooper");
         widget_set_icon_from_png(w,LDVAR(alooper_png));
         widget_set_dnd_aware(w);
         w->parent_struct = (void*)this;
         w->func.expose_callback = draw_window;
         w->func.dnd_notify_callback = dnd_load_response;
+
         wview = add_waveview(w, "", 20, 20, 360, 100);
         wview->scale.gravity = NORTHWEST;
         wview->parent_struct = (void*)this;
         wview->adj_y = add_adjustment(wview,0.0, 0.0, 0.0, 1000.0,1.0, CL_METER);
         wview->adj = wview->adj_y;
         wview->func.expose_callback = draw_wview;
+
         filebutton = add_file_button(w, 20, 130, 30, 30, getenv("HOME") ? getenv("HOME") : "/", "audio");
         filebutton->scale.gravity = SOUTHEAST;
         filebutton->parent_struct = (void*)this;
         widget_get_png(filebutton, LDVAR(dir_png));
         filebutton->func.user_callback = dialog_response;
+
+        lview = add_image_toggle_button(w, "", 60, 130, 30, 30);
+        lview->parent_struct = (void*)this;
+        lview->scale.gravity = SOUTHEAST;
+        widget_get_png(lview, LDVAR(menu_png));
+        lview->func.value_changed_callback = button_lview_callback;
+
         volume = add_knob(w, "dB",255,130,28,28);
         volume->parent_struct = (void*)this;
         volume->scale.gravity = SOUTHWEST;
@@ -190,20 +239,27 @@ public:
         backset->scale.gravity = SOUTHWEST;
         widget_get_png(backset, LDVAR(rewind_png));
         backset->func.value_changed_callback = button_backset_callback;
+
         paus = add_image_toggle_button(w, "", 320, 130, 30, 30);
         paus->scale.gravity = SOUTHWEST;
         paus->parent_struct = (void*)this;
         widget_get_png(paus, LDVAR(pause_png));
         paus->func.value_changed_callback = button_pause_callback;
+
         w_quit = add_button(w, "", 350, 130, 30, 30);
         w_quit->parent_struct = (void*)this;
         widget_get_png(w_quit, LDVAR(exit__png));
         w_quit->scale.gravity = SOUTHWEST;
         w_quit->func.value_changed_callback = button_quit_callback;
+
         widget_show_all(w);
+        createPlayListView(app);
 
         pa.startTimeout(60);
         pa.set<AudioLooperUi, &AudioLooperUi::updateUI>(this);
+
+        pl.start();
+        pl.set<AudioLooperUi, &AudioLooperUi::loadFromPlayList>(this);
     }
 
 private:
@@ -213,10 +269,53 @@ private:
     Widget_t *paus;
     Widget_t *backset;
     Widget_t *volume;
+    Widget_t *lview;
+    Widget_t *viewPlayList;
+    Widget_t *playList;
+    Widget_t *deleteEntry;
+    Widget_t *upEntry;
+    Widget_t *downEntry;
     std::condition_variable *SyncWait;
     std::mutex WMutex;
     SupportedFormats supportedFormats;
     PaStream* stream;
+    std::vector<std::tuple< std::string, std::string> > PlayList;
+    std::vector<std::tuple< std::string, std::string> >::iterator lfile;
+    uint32_t playNow;
+    bool usePlayList;
+
+    void createPlayListView(Xputty *app) {
+        viewPlayList = create_window(app, os_get_root_window(app, IS_WINDOW), 0, 0, 400, 340);
+        viewPlayList->flags |= HIDE_ON_DELETE;
+        widget_set_title(viewPlayList, "alooper-Playlist");
+        widget_set_icon_from_png(viewPlayList,LDVAR(alooper_png));
+        widget_set_dnd_aware(viewPlayList);
+        viewPlayList->parent_struct = (void*)this;
+        viewPlayList->func.expose_callback = draw_window;
+        viewPlayList->func.dnd_notify_callback = dnd_load_playlist;
+
+        playList = add_listbox(viewPlayList, "", 20, 20, 360, 280);
+        playList->parent_struct = (void*)this;
+        playList->scale.gravity = NORTHWEST;
+
+        upEntry = add_button(viewPlayList, "", 290, 300, 30, 30);
+        upEntry->parent_struct = (void*)this;
+        widget_get_png(upEntry, LDVAR(up_png));
+        upEntry->scale.gravity = SOUTHWEST;
+        upEntry->func.value_changed_callback = up_entry_callback;
+
+        downEntry = add_button(viewPlayList, "", 320, 300, 30, 30);
+        downEntry->parent_struct = (void*)this;
+        widget_get_png(downEntry, LDVAR(down_png));
+        downEntry->scale.gravity = SOUTHWEST;
+        downEntry->func.value_changed_callback = down_entry_callback;
+
+        deleteEntry = add_button(viewPlayList, "", 350, 300, 30, 30);
+        deleteEntry->parent_struct = (void*)this;
+        widget_get_png(deleteEntry, LDVAR(quit_png));
+        deleteEntry->scale.gravity = SOUTHWEST;
+        deleteEntry->func.value_changed_callback = remove_entry_callback;
+    }
 
     void read_soundfile(const char* file) {
         // struct to hols sound file info
@@ -259,6 +358,10 @@ private:
         sf_close(sndfile);
         samples = checkSampleRate(&samplesize, channels, samples, samplerate, jack_sr);
         loadNew = true;
+        #if defined(__linux__) || defined(__FreeBSD__) || \
+            defined(__NetBSD__) || defined(__OpenBSD__)
+        XLockDisplay(w->app->dpy);
+        #endif
         if (samples) {
             adj_set_max_value(wview->adj, (float)samplesize);
             update_waveview(wview, samples, samplesize);
@@ -270,6 +373,12 @@ private:
             std::cerr << "Error: could not resample file" << std::endl;
             widget_set_title(w, "alooper");
         }
+        #if defined(__linux__) || defined(__FreeBSD__) || \
+            defined(__NetBSD__) || defined(__OpenBSD__)
+        XFlush(w->app->dpy);
+        XUnlockDisplay(w->app->dpy);
+        #endif
+        
         ready = true;
     }
 
@@ -283,7 +392,52 @@ private:
             while (dndfile != NULL) {
                 if (self->supportedFormats.isSupported(dndfile) ) {
                     self->read_soundfile(dndfile);
+                    self->PlayList.push_back(std::tuple<std::string, std::string>(
+                        std::string(basename(dndfile)), std::string(dndfile)));
+                    auto it = self->PlayList.end()-1;
+                    listbox_add_entry(self->playList, std::get<0>(*it).c_str());
+                    self->playNow = self->PlayList.size()-1;
+                    Metrics_t metrics;
+                    os_get_window_metrics(self->playList, &metrics);
+                    if (metrics.visible) {
+                        listbox_set_active_entry(self->playList, self->playNow);
+                        widget_show_all(self->playList);
+                    }
                     break;
+                } else {
+                    std::cerr << "Unrecognized file extension: " << dndfile << std::endl;
+                }
+                dndfile = strtok(NULL, "\r\n");
+            }
+        }
+    }
+
+    static void dnd_load_playlist(void *w_, void* user_data) {
+        Widget_t *w = (Widget_t*)w_;
+        AudioLooperUi *self = static_cast<AudioLooperUi*>(w->parent_struct);
+        if (!Pa_IsStreamActive(self->stream)) return;
+        if (user_data != NULL) {
+            char* dndfile = NULL;
+            dndfile = strtok(*(char**)user_data, "\r\n");
+            while (dndfile != NULL) {
+                if (self->supportedFormats.isSupported(dndfile) ) {
+                    if (!self->PlayList.size()) self->read_soundfile(dndfile);
+                    
+                    self->PlayList.push_back(std::tuple<std::string, std::string>(
+                        std::string(basename(dndfile)), std::string(dndfile)));
+                    auto it = self->PlayList.end()-1;
+                    #if defined(__linux__) || defined(__FreeBSD__) || \
+                        defined(__NetBSD__) || defined(__OpenBSD__)
+                    XLockDisplay(w->app->dpy);
+                    #endif
+                    listbox_add_entry(self->playList, std::get<0>(*it).c_str());
+                    widget_show_all(self->playList);
+                    #if defined(__linux__) || defined(__FreeBSD__) || \
+                        defined(__NetBSD__) || defined(__OpenBSD__)
+                    XFlush(w->app->dpy);
+                    XUnlockDisplay(w->app->dpy);
+                    #endif
+                    //break;
                 } else {
                     std::cerr << "Unrecognized file extension: " << dndfile << std::endl;
                 }
@@ -295,19 +449,19 @@ private:
     static void dummy_callback(void *w_, void* user_data) {}
 
     void updateUI() {
-#if defined(__linux__) || defined(__FreeBSD__) || \
-    defined(__NetBSD__) || defined(__OpenBSD__)
+        #if defined(__linux__) || defined(__FreeBSD__) || \
+            defined(__NetBSD__) || defined(__OpenBSD__)
         XLockDisplay(w->app->dpy);
         wview->func.adj_callback = dummy_callback;
-#endif
+        #endif
         adj_set_value(wview->adj, (float) position);
-#if defined(__linux__) || defined(__FreeBSD__) || \
-    defined(__NetBSD__) || defined(__OpenBSD__)
+        #if defined(__linux__) || defined(__FreeBSD__) || \
+            defined(__NetBSD__) || defined(__OpenBSD__)
         expose_widget(wview);
         XFlush(w->app->dpy);
         wview->func.adj_callback = transparent_draw;
         XUnlockDisplay(w->app->dpy);
-#endif
+        #endif
     }
 
     void roundrec(cairo_t *cr, float x, float y, float width, float height, float r) {
@@ -516,6 +670,69 @@ private:
         AudioLooperUi *self = static_cast<AudioLooperUi*>(w->parent_struct);
         if ((w->flags & HAS_POINTER) && !adj_get_value(w->adj)){
             self->position = 0;
+        }
+    }
+
+    static void button_lview_callback(void *w_, void* user_data) {
+        Widget_t *w = (Widget_t*)w_;
+        AudioLooperUi *self = static_cast<AudioLooperUi*>(w->parent_struct);
+        if ((w->flags & HAS_POINTER) && adj_get_value(w->adj)){
+            int x1, y1;
+            os_translate_coords( self->w, self->w->widget, 
+                os_get_root_window(self->w->app, IS_WIDGET), 0, 0, &x1, &y1);
+            widget_show_all(self->viewPlayList);
+            os_move_window(self->w->app->dpy,self->viewPlayList,x1, y1+16+self->w->height);
+            self->usePlayList = true;
+        } else {
+            widget_hide(self->viewPlayList);
+            self->usePlayList = false;
+        }
+    }
+
+    static void remove_entry_callback(void *w_, void* user_data) {
+        Widget_t *w = (Widget_t*)w_;
+        AudioLooperUi *self = static_cast<AudioLooperUi*>(w->parent_struct);
+        if ((w->flags & HAS_POINTER) && adj_get_value(w->adj)){
+            if (!self->PlayList.size()) return;
+            int remove = static_cast<int>(adj_get_value(self->playList->adj));
+            self->PlayList.erase(self->PlayList.begin() + remove);
+            listbox_remove_entrys(self->playList);
+            for (auto it = self->PlayList.begin(); it != self->PlayList.end(); it++)
+                listbox_add_entry(self->playList, std::get<0>(*it).c_str());
+            listbox_set_active_entry(self->playList, self->playNow);
+            widget_show_all(self->viewPlayList);
+        }
+    }
+
+    static void up_entry_callback(void *w_, void* user_data) {
+        Widget_t *w = (Widget_t*)w_;
+        AudioLooperUi *self = static_cast<AudioLooperUi*>(w->parent_struct);
+        if ((w->flags & HAS_POINTER) && adj_get_value(w->adj)){
+            if (!self->PlayList.size()) return;
+            int up = static_cast<int>(adj_get_value(self->playList->adj));
+            if (!up) return;
+            std::swap(self->PlayList[up-1],self->PlayList[up]);
+            listbox_remove_entrys(self->playList);
+            for (auto it = self->PlayList.begin(); it != self->PlayList.end(); it++)
+                listbox_add_entry(self->playList, std::get<0>(*it).c_str());
+            listbox_set_active_entry(self->playList, self->playNow);
+            widget_show_all(self->viewPlayList);
+        }
+    }
+
+    static void down_entry_callback(void *w_, void* user_data) {
+        Widget_t *w = (Widget_t*)w_;
+        AudioLooperUi *self = static_cast<AudioLooperUi*>(w->parent_struct);
+        if ((w->flags & HAS_POINTER) && adj_get_value(w->adj)){
+            if (!self->PlayList.size()) return;
+            int down = static_cast<int>(adj_get_value(self->playList->adj));
+            if (down > static_cast<int>(self->PlayList.size()-1)) return;
+            std::swap(self->PlayList[down],self->PlayList[down+1]);
+            listbox_remove_entrys(self->playList);
+            for (auto it = self->PlayList.begin(); it != self->PlayList.end(); it++)
+                listbox_add_entry(self->playList, std::get<0>(*it).c_str());
+            listbox_set_active_entry(self->playList, self->playNow);
+            widget_show_all(self->viewPlayList);
         }
     }
 
