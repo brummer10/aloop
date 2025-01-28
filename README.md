@@ -4,13 +4,26 @@
     <img src="https://github.com/brummer10/aloop/blob/main/alooper.png?raw=true" />
 </p>
 
-aloop is a audio file looper for Linux using PortAudio as backend. (jack, pulse, alsa)
-It support all file formats supported by libsndfile. 
-Files could be load by drag n' drop them into the aloop GUI, 
-or by select them with the included file browser.
-It also allow to "open with" a file in a file browswer, or give a file to open on the command line.
+aloop is a audio file looper for Linux using PortAudio as backend (jack, pulse, alsa), 
+libsndfile to load sound files and zita-resampler to resample the files when needed.
+The GUI is created with libxputty.
 
-aloop resample files on load, using zita-resampler, to match the jack sample rate, when needed. 
+## Features
+
+- support all file formats supported by libsndfile.
+- resample files on load to match session Sample Rate
+- file loading by drag n' drop
+- included file browser
+- open file directly in a desktop file browser
+- open file on command-line
+- create, sort, save and load playlists
+- select to loop over a single file or over the play list
+- move play-head to mouse position in wave view
+- play backwards
+- volume control
+- endless looping
+- break playback
+- reset play-head to start position
 
 ## Dependencies
 

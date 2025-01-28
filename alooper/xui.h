@@ -20,11 +20,13 @@
 #include <vector>
 #include <string>
 #include <sndfile.hh>
+#include <fstream>
 
 #include "CheckResample.h"
 
 #include "xwidgets.h"
 #include "xfile-dialog.h"
+#include "TextEntry.h"
 
 #pragma once
 
@@ -102,7 +104,7 @@ private:
     }
 };
 
-class AudioLooperUi: CheckResample
+class AudioLooperUi: CheckResample, public TextEntry
 {
 public:
     Widget_t *w;
@@ -119,6 +121,7 @@ public:
     bool loadNew;
     bool play;
     bool ready;
+    bool playBackwards;
 
     AudioLooperUi() {
         samplesize = 0;
@@ -133,7 +136,17 @@ public:
         ready = true;
         usePlayList = false;
         forceReload = false;
+        playBackwards = false;
+        viewPlayList = nullptr;
         stream = nullptr;
+        if (getenv("XDG_CONFIG_HOME")) {
+            std::string path = getenv("XDG_CONFIG_HOME");
+            config_file = path + "/alooper.conf";
+        } else {
+            std::string path = getenv("HOME");
+            config_file = path +"/.config/alooper.conf";
+        }
+        readPlayList();
     };
 
     ~AudioLooperUi() {
@@ -141,6 +154,7 @@ public:
         pl.stop();
         pa.stop();
         PlayList.clear();
+        PlayListNames.clear();
     };
 
 /****************************************************************
@@ -196,9 +210,10 @@ public:
         wview = add_waveview(w, "", 20, 20, 360, 100);
         wview->scale.gravity = NORTHWEST;
         wview->parent_struct = (void*)this;
-        wview->adj_y = add_adjustment(wview,0.0, 0.0, 0.0, 1000.0,1.0, CL_METER);
-        wview->adj = wview->adj_y;
+        wview->adj_x = add_adjustment(wview,0.0, 0.0, 0.0, 1000.0,1.0, CL_METER);
+        wview->adj = wview->adj_x;
         wview->func.expose_callback = draw_wview;
+        wview->func.button_release_callback = set_playhead;
 
         filebutton = add_file_button(w, 20, 130, 30, 30, getenv("HOME") ? getenv("HOME") : "/", "audio");
         filebutton->scale.gravity = SOUTHEAST;
@@ -212,12 +227,18 @@ public:
         widget_get_png(lview, LDVAR(menu_png));
         lview->func.value_changed_callback = button_lview_callback;
 
-        volume = add_knob(w, "dB",255,130,28,28);
+        volume = add_knob(w, "dB",220,130,28,28);
         volume->parent_struct = (void*)this;
         volume->scale.gravity = SOUTHWEST;
         set_adjustment(volume->adj, 0.0, 0.0, -20.0, 6.0, 0.1, CL_CONTINUOS);
         volume->func.expose_callback = draw_knob;
         volume->func.value_changed_callback = volume_callback;
+
+        backwards = add_image_toggle_button(w, "", 260, 130, 30, 30);
+        backwards->scale.gravity = SOUTHWEST;
+        backwards->parent_struct = (void*)this;
+        widget_get_png(backwards, LDVAR(backwards_png));
+        backwards->func.value_changed_callback = button_backwards_callback;
 
         backset = add_button(w, "", 290, 130, 30, 30);
         backset->parent_struct = (void*)this;
@@ -238,7 +259,6 @@ public:
         w_quit->func.value_changed_callback = button_quit_callback;
 
         widget_show_all(w);
-        createPlayListView(app);
 
         pa.startTimeout(60);
         pa.set<AudioLooperUi, &AudioLooperUi::updateUI>(this);
@@ -254,24 +274,30 @@ private:
     Widget_t *paus;
     Widget_t *backset;
     Widget_t *volume;
+    Widget_t *backwards;
     Widget_t *lview;
     Widget_t *viewPlayList;
     Widget_t *playList;
     Widget_t *deleteEntry;
     Widget_t *upEntry;
     Widget_t *downEntry;
+    Widget_t *loadPlayList;
+    Widget_t *savePlayList;
+    Widget_t *LoadMenu;
     std::condition_variable *SyncWait;
     std::mutex WMutex;
     SupportedFormats supportedFormats;
     PaStream* stream;
     std::vector<std::tuple< std::string, std::string> > PlayList;
     std::vector<std::tuple< std::string, std::string> >::iterator lfile;
+    std::vector<std::string> PlayListNames;
     uint32_t playNow;
     bool usePlayList;
     bool forceReload;
+    std::string config_file;
 
 /****************************************************************
-                      PlayList
+            PlayList - create the window
 ****************************************************************/
 
     // create the Play List window
@@ -285,28 +311,48 @@ private:
         viewPlayList->func.expose_callback = draw_window;
         viewPlayList->func.dnd_notify_callback = dnd_load_playlist;
 
-        playList = add_listbox(viewPlayList, "", 20, 20, 360, 280);
+        playList = add_listbox(viewPlayList, "", 20, 20, 360, 270);
         playList->parent_struct = (void*)this;
         playList->scale.gravity = NORTHWEST;
 
-        upEntry = add_button(viewPlayList, "", 290, 300, 30, 30);
+        loadPlayList = add_button(viewPlayList, "", 20, 300, 30, 30);
+        loadPlayList->parent_struct = (void*)this;
+        widget_get_png(loadPlayList, LDVAR(load__png));
+        loadPlayList->scale.gravity = SOUTHEAST;
+        loadPlayList->func.value_changed_callback = load_up_callback;
+
+        savePlayList = add_button(viewPlayList, "", 50, 300, 30, 30);
+        savePlayList->parent_struct = (void*)this;
+        widget_get_png(savePlayList, LDVAR(save__png));
+        savePlayList->scale.gravity = SOUTHEAST;
+        savePlayList->func.value_changed_callback = save_as_callback;
+
+        upEntry = add_button(viewPlayList, "", 320, 300, 30, 30);
         upEntry->parent_struct = (void*)this;
         widget_get_png(upEntry, LDVAR(up_png));
         upEntry->scale.gravity = SOUTHWEST;
         upEntry->func.value_changed_callback = up_entry_callback;
 
-        downEntry = add_button(viewPlayList, "", 320, 300, 30, 30);
+        downEntry = add_button(viewPlayList, "", 350, 300, 30, 30);
         downEntry->parent_struct = (void*)this;
         widget_get_png(downEntry, LDVAR(down_png));
         downEntry->scale.gravity = SOUTHWEST;
         downEntry->func.value_changed_callback = down_entry_callback;
 
-        deleteEntry = add_button(viewPlayList, "", 350, 300, 30, 30);
+        deleteEntry = add_button(viewPlayList, "", 290, 300, 30, 30);
         deleteEntry->parent_struct = (void*)this;
         widget_get_png(deleteEntry, LDVAR(quit_png));
         deleteEntry->scale.gravity = SOUTHWEST;
         deleteEntry->func.value_changed_callback = remove_entry_callback;
+
+        LoadMenu = create_menu(loadPlayList,25);
+        LoadMenu->parent_struct = (void*)this;
+        LoadMenu->func.button_release_callback = load_playlist_callback;
     }
+
+/****************************************************************
+            PlayList - callbacks
+****************************************************************/
 
     // load next file from Play List, called from background thread,
     // triggered by audio server when end of current file is reached
@@ -428,6 +474,152 @@ private:
         }
     }
 
+    // load a saved Play List by a given name
+    static void load_playlist_callback(void* w_, void* item_, void* data_) {
+        Widget_t *w = (Widget_t*)w_;
+        AudioLooperUi *self = static_cast<AudioLooperUi*>(w->parent_struct);
+        int v = *(int*)item_;
+        self->PlayList.clear();
+        self->load_PlayList(self->PlayListNames[v].c_str());
+        self->rebuildPlayList();
+        if (!self->samples) {
+            auto i = self->PlayList.begin();
+            self->read_soundfile(std::get<1>(*i).c_str());
+        } else {
+            self->playNow = self->PlayList.size()-1;
+        }
+    }
+
+    // pop up a menu to select the Play List to load
+    static void load_up_callback(void *w_, void* user_data) {
+        Widget_t *w = (Widget_t*)w_;
+        AudioLooperUi *self = static_cast<AudioLooperUi*>(w->parent_struct);
+        if ((w->flags & HAS_POINTER) && !adj_get_value(w->adj)){
+            self->PlayListNames.clear();
+            self->readPlayList();
+
+            Widget_t *view_port = self->LoadMenu->childlist->childs[0];
+            int i = view_port->childlist->elem;
+            for(;i>-1;i--) {
+                menu_remove_item(self->LoadMenu,view_port->childlist->childs[i]);
+            }
+
+            for (auto i = self->PlayListNames.begin(); i != self->PlayListNames.end(); i++) {
+                menu_add_item(self->LoadMenu, (*i).c_str());
+            }
+            pop_menu_show(w, self->LoadMenu, 6, true);
+        }
+    }
+
+    // save a Play List under the given name
+    static void save_response(void *w_, void* user_data) {
+        Widget_t *w = (Widget_t*)w_;
+        if(user_data !=NULL && strlen(*(const char**)user_data)) {
+            AudioLooperUi *self = static_cast<AudioLooperUi*>(w->parent_struct);
+            std::string lname(*(const char**)user_data);
+            if (std::find(self->PlayListNames.begin(), self->PlayListNames.end(), lname) 
+                                                            != self->PlayListNames.end()) {
+                Widget_t* dia = self->showTextEntry(self->viewPlayList, 
+                            "Playlist - name already exists:", "Choose a other name:");
+                int x1, y1;
+                os_translate_coords( self->viewPlayList, self->viewPlayList->widget, 
+                    os_get_root_window(self->w->app, IS_WIDGET), 0, 0, &x1, &y1);
+                os_move_window(self->w->app->dpy,dia,x1+60, y1+16);
+                self->viewPlayList->func.dialog_callback = save_response;
+            } else {
+                self->save_PlayList(lname, true);
+            }
+        }
+    }
+
+    // pop up a text entry to enter a name for a Play List to save
+    static void save_as_callback(void *w_, void* user_data) {
+        Widget_t *w = (Widget_t*)w_;
+        AudioLooperUi *self = static_cast<AudioLooperUi*>(w->parent_struct);
+        if ((w->flags & HAS_POINTER) && !adj_get_value(w->adj)){
+            if (!self->PlayList.size()) return;
+            Widget_t* dia = self->showTextEntry(self->viewPlayList, 
+                        "Playlist - save as:", "Save Play List as:");
+            int x1, y1;
+            os_translate_coords( self->viewPlayList, self->viewPlayList->widget, 
+                os_get_root_window(self->w->app, IS_WIDGET), 0, 0, &x1, &y1);
+            os_move_window(self->w->app->dpy,dia,x1+60, y1+16);
+            self->viewPlayList->func.dialog_callback = save_response;
+        }
+    }
+
+
+/****************************************************************
+                Read/Save/Load a Play List
+****************************************************************/
+
+    // remove key from line
+    std::string remove_sub(std::string a, std::string b) {
+        std::string::size_type fpos = a.find(b);
+        if (fpos != std::string::npos )
+            a.erase(a.begin() + fpos, a.begin() + fpos + b.length());
+        return (a);
+    }
+
+    // save a Play List to file
+    void save_PlayList(std::string lname, bool append) {
+        std::ofstream outfile(config_file, append ? std::ios::app : std::ios::trunc);
+        if (outfile.is_open()) {
+             outfile << "[PlayList] "<< lname << std::endl;
+             for (auto i = PlayList.begin(); i != PlayList.end(); i++) {
+                outfile << "[File] "<< std::get<1>(*i) << std::endl;
+             }
+         }
+         outfile.close();
+    }
+
+    // load a Play List by given name
+    void load_PlayList(std::string LoadName) {
+        std::ifstream infile(config_file);
+        std::string line;
+        std::string key;
+        std::string value;
+        std::string ListName;
+        if (infile.is_open()) {
+            while (std::getline(infile, line)) {
+                std::istringstream buf(line);
+                buf >> key;
+                buf >> value;
+                if (key.compare("[PlayList]") == 0) ListName = remove_sub(line, "[PlayList] ");
+                if (ListName.compare(LoadName) == 0) {
+                    if (key.compare("[File]") == 0) {
+                        std::string fileName = remove_sub(line, "[File] ");
+                        PlayList.push_back(std::tuple<std::string, std::string>(
+                            std::string(basename((char*)fileName.c_str())), fileName));
+                    }
+                }
+                key.clear();
+                value.clear();
+            }
+        }
+        infile.close();
+    }
+
+    // get the Play List names form file
+    void readPlayList() {
+        std::ifstream infile(config_file);
+        std::string line;
+        std::string key;
+        std::string value;
+        std::string ListName;
+        if (infile.is_open()) {
+            while (std::getline(infile, line)) {
+                std::istringstream buf(line);
+                buf >> key;
+                buf >> value;
+                if (key.compare("[PlayList]") == 0) PlayListNames.push_back(remove_sub(line, "[PlayList] "));
+                key.clear();
+                value.clear();
+            }
+        }
+        infile.close();   
+    }
+
 /****************************************************************
                       File loading
 ****************************************************************/
@@ -513,7 +705,7 @@ private:
             std::cerr << "Error: could not resample file" << std::endl;
             failToLoad();
         }
-        
+        if (playBackwards) position = samplesize;
         ready = true;
     }
 
@@ -585,6 +777,15 @@ private:
         } else self->play = true;
     }
 
+    // play backwards
+    static void button_backwards_callback(void *w_, void* user_data) {
+        Widget_t *w = (Widget_t*)w_;
+        AudioLooperUi *self = static_cast<AudioLooperUi*>(w->parent_struct);
+        if ((w->flags & HAS_POINTER) && adj_get_value(w->adj)){
+            self->playBackwards = true;
+        } else self->playBackwards = false;
+    }
+
     // move playhead to start position 
     static void button_backset_callback(void *w_, void* user_data) {
         Widget_t *w = (Widget_t*)w_;
@@ -594,11 +795,29 @@ private:
         }
     }
 
+    // set playhead position to mouse pointer
+    static void set_playhead(void *w_, void* xbutton_, void* user_data) {
+        Widget_t *w = (Widget_t*)w_;
+        AudioLooperUi *self = static_cast<AudioLooperUi*>(w->parent_struct);
+        XButtonEvent *xbutton = (XButtonEvent*)xbutton_;
+        if (w->flags & HAS_POINTER) {
+            if(xbutton->state == Button1Mask) {
+                Metrics_t metrics;
+                os_get_window_metrics(w, &metrics);
+                int width = metrics.width;
+                int x = xbutton->x;
+                float st = max(0.0, min(1.0, static_cast<float>((float)x/(float)width)));
+                self->position = adj_get_max_value(w->adj) * st;
+            }
+        }
+    }
+
     // show the Play List window
     static void button_lview_callback(void *w_, void* user_data) {
         Widget_t *w = (Widget_t*)w_;
         AudioLooperUi *self = static_cast<AudioLooperUi*>(w->parent_struct);
         if ((w->flags & HAS_POINTER) && adj_get_value(w->adj)){
+            if (!self->viewPlayList) self->createPlayListView(self->w->app);
             int x1, y1;
             os_translate_coords( self->w, self->w->widget, 
                 os_get_root_window(self->w->app, IS_WIDGET), 0, 0, &x1, &y1);

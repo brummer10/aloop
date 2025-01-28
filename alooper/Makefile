@@ -50,7 +50,7 @@ endif
 
 	# set bundle name
 	NAME = alooper
-	VER = 0.2
+	VER = 0.1
 
 	PREFIX ?= /usr
 	BIN_DIR ?= $(PREFIX)/bin

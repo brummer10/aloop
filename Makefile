@@ -46,6 +46,10 @@ clean:
 	@rm -f ./libxputty/xputty/resources/menu.png
 	@rm -f ./libxputty/xputty/resources/up.png
 	@rm -f ./libxputty/xputty/resources/down.png
+	@rm -f ./libxputty/xputty/resources/load_.png
+	@rm -f ./libxputty/xputty/resources/save_.png
+	@rm -f ./libxputty/xputty/resources/backwards.png
+	@rm -f ./libxputty/xputty/resources/okay.png
 
 
 features:

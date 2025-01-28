@@ -45,9 +45,12 @@ static int process(const void* inputBuffer, void* outputBuffer,
                 } else *out++ = ui.samples[ui.position*ui.channels+c] * fRec0[0];
             }
             fRec0[1] = fRec0[0];
-            ui.position++;
+            ui.playBackwards ? ui.position-- : ui.position++;
             if (ui.position > ui.samplesize) {
                 ui.position = 0;
+                if (ui.pl.getProcess()) ui.pl.runProcess();
+            } else if (ui.position <= 0) {
+                ui.position = ui.samplesize;
                 if (ui.pl.getProcess()) ui.pl.runProcess();
             }
         }
