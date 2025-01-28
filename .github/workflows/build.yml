@@ -1,0 +1,20 @@
+
+name: build
+
+on:
+  push:
+env:
+  PAWPAW_SKIP_LV2: 1
+
+jobs:
+  source:
+    runs-on: ubuntu-20.04
+    permissions:
+        contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: distrho/dpf-makefile-action@v1
+        with:
+          target: source
