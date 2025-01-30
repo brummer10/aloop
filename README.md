@@ -19,6 +19,8 @@ The GUI is created with libxputty.
 - create, sort, save and load playlists
 - select to loop over a single file or over the play list
 - move play-head to mouse position in wave view
+- set loop points for start/end loop
+- save loop points in play list
 - play backwards
 - volume control
 - endless looping

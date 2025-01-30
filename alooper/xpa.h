@@ -16,7 +16,12 @@
 ****************************************************************/
 
 #include <portaudio.h>
+
+#if defined(__linux__) || defined(__FreeBSD__) || \
+    defined(__NetBSD__) || defined(__OpenBSD__)
 #include <pa_jack.h>
+#endif
+
 #include <cmath>
 #include <vector>
 #include <cstdio>
@@ -35,7 +40,10 @@ class XPa {
 public:
 
     XPa(const char* cname){
+        #if defined(__linux__) || defined(__FreeBSD__) || \
+            defined(__NetBSD__) || defined(__OpenBSD__)
         PaJack_SetClientName (cname);
+        #endif
         init();
         SampleRate = 0;
     };
@@ -44,6 +52,8 @@ public:
 
     // open a audio stream for input/output channels and set the audio process callback
     bool openStream(uint32_t ichannels, uint32_t ochannels, PaStreamCallback *process, void* arg) {
+        #if defined(__linux__) || defined(__FreeBSD__) || \
+            defined(__NetBSD__) || defined(__OpenBSD__)
         std::vector<Devices> devices;
         int d = Pa_GetDeviceCount();
         const PaDeviceInfo *info;
@@ -60,6 +70,7 @@ public:
                 dev.SampleRate = SampleRate = info->defaultSampleRate;
                 devices.push_back(dev);
             }
+            
         }
 
         std::sort(devices.begin(), devices.end(), 
@@ -84,6 +95,27 @@ public:
                             paFramesPerBufferUnspecified, paClipOff, process, arg);
 
         devices.clear();
+        #else
+        PaStreamParameters inputParameters;
+        inputParameters.device = Pa_GetDefaultInputDevice();
+        inputParameters.channelCount = ichannels;
+        inputParameters.sampleFormat = paFloat32;
+        inputParameters.suggestedLatency = 0.050;
+        inputParameters.hostApiSpecificStreamInfo = nullptr;
+
+        PaStreamParameters outputParameters;
+        outputParameters.device = Pa_GetDefaultOutputDevice();
+        if (outputParameters.device == paNoDevice) return false;
+        outputParameters.channelCount = ochannels;
+        outputParameters.sampleFormat = paFloat32;
+        outputParameters.suggestedLatency = 0.050;
+        outputParameters.hostApiSpecificStreamInfo = nullptr;
+        SampleRate = 44100;
+        err = Pa_OpenStream(&stream, ichannels ? &inputParameters : nullptr, 
+                            ochannels ? &outputParameters : nullptr, SampleRate,
+                            paFramesPerBufferUnspecified, paClipOff, process, arg);
+        #endif
+
         return err == paNoError ? true : false;
     }
 
@@ -131,14 +163,20 @@ private:
     // initialise the portaudio server,
     // catch the falling device probe messages  
     void init() {
+        #if defined(__linux__) || defined(__FreeBSD__) || \
+            defined(__NetBSD__) || defined(__OpenBSD__)
         char buffer[1024];
         auto fp = fmemopen(buffer, 1024, "w");
         if ( !fp ) { std::printf("error"); }
         auto old = stderr;
         stderr = fp;
+        #endif
         Pa_Initialize();
+        #if defined(__linux__) || defined(__FreeBSD__) || \
+            defined(__NetBSD__) || defined(__OpenBSD__)
         std::fclose(fp);
         stderr = old;
+        #endif
     }
 
 };

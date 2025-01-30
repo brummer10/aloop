@@ -29,8 +29,10 @@ static int process(const void* inputBuffer, void* outputBuffer,
     PaStreamCallbackFlags statusFlags, void* data) {
 
     float* out = static_cast<float*>(outputBuffer);
-    std::condition_variable *Sync = static_cast<std::condition_variable*>(data);
+    static std::condition_variable *Sync = static_cast<std::condition_variable*>(data);
     static float fRec0[2] = {0};
+    static float ramp = 0.0;
+    static const float ramp_step = 256.0;
     (void) timeInfo;
     (void) statusFlags;
 
@@ -45,13 +47,34 @@ static int process(const void* inputBuffer, void* outputBuffer,
                 } else *out++ = ui.samples[ui.position*ui.channels+c] * fRec0[0];
             }
             fRec0[1] = fRec0[0];
+            // track play-head position
             ui.playBackwards ? ui.position-- : ui.position++;
-            if (ui.position > ui.samplesize) {
-                ui.position = 0;
+            if (ui.position > ui.loopPoint_r) {
+                ui.position = ui.loopPoint_l;
                 if (ui.pl.getProcess()) ui.pl.runProcess();
-            } else if (ui.position <= 0) {
-                ui.position = ui.samplesize;
+            } else if (ui.position <= ui.loopPoint_l) {
+                ui.position = ui.loopPoint_r;
                 if (ui.pl.getProcess()) ui.pl.runProcess();
+            // ramp up on loop start point
+            } else if (ui.playBackwards ?
+                        ui.position > ui.loopPoint_r - ramp_step :
+                        ui.position < ui.loopPoint_l + ramp_step) {
+                if (ramp < ramp_step) {
+                    ++ramp;
+                }
+                const float fade = max(0.0,ramp) /ramp_step ;
+                *(out - 2) *= fade;
+                *(out - 1) *= fade;
+            // ramp down on loop end point
+            } else if (ui.playBackwards ?
+                        ui.position < ui.loopPoint_l + ramp_step :
+                        ui.position > ui.loopPoint_r - ramp_step) {
+                if (ramp > 0.0) {
+                    --ramp; 
+                }
+                const float fade = max(0.0,ramp) /ramp_step ;
+                *(out - 2) *= fade;
+                *(out - 1) *= fade;
             }
         }
     } else {
@@ -62,6 +85,8 @@ static int process(const void* inputBuffer, void* outputBuffer,
     return 0;
 }
 
+#if defined(__linux__) || defined(__FreeBSD__) || \
+    defined(__NetBSD__) || defined(__OpenBSD__)
 // catch signals and exit clean
 void
 signal_handler (int sig)
@@ -72,21 +97,16 @@ signal_handler (int sig)
         case SIGTERM:
         case SIGQUIT:
             std::cerr << "\nsignal "<< sig <<" received, exiting ...\n"  <<std::endl;
-            #if defined(__linux__) || defined(__FreeBSD__) || \
-                defined(__NetBSD__) || defined(__OpenBSD__)
             XLockDisplay(ui.w->app->dpy);
-            #endif
             ui.onExit();
-            #if defined(__linux__) || defined(__FreeBSD__) || \
-                defined(__NetBSD__) || defined(__OpenBSD__)
             XFlush(ui.w->app->dpy);
             XUnlockDisplay(ui.w->app->dpy);
-            #endif
         break;
         default:
         break;
     }
 }
+#endif
 
 int main(int argc, char *argv[]){
 
@@ -102,10 +122,13 @@ int main(int argc, char *argv[]){
     main_init(&app);
     ui.createGUI(&app, &Sync);
 
+    #if defined(__linux__) || defined(__FreeBSD__) || \
+        defined(__NetBSD__) || defined(__OpenBSD__)
     signal (SIGQUIT, signal_handler);
     signal (SIGTERM, signal_handler);
     signal (SIGHUP, signal_handler);
     signal (SIGINT, signal_handler);
+    #endif
 
     XPa xpa ("alooper");
     if(!xpa.openStream(0, 2, &process, (void*) &Sync)) ui.onExit();

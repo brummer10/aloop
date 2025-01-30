@@ -67,17 +67,36 @@ endif
 	RESAMP_OBJ := $(patsubst %.cc,%.o,$(RESAMP_SOURCES))
 	RESAMP_LIB := libzita-resampler.$(STATIC_LIB_EXT)
 
+ifeq ($(TARGET), Linux)
 	# set compile flags
 	CFLAGS += -I. -I./zita-resampler-1.1.0 -Wall -funroll-loops `pkg-config --cflags sndfile $(USEAPI)`\
 	-ffast-math -fomit-frame-pointer -fstrength-reduce -fdata-sections -Wl,--gc-sections \
 	-pthread $(SSE_CFLAGS)
-	CXXFLAGS += -MMD -std=c++17 $(CFLAGS)
+	CXXFLAGS += -MMD -std=c++17 -D_OS_UNIX_ -DALVER=\"$(VER)\" $(CFLAGS)
 	LDFLAGS += -I. -lm -pthread -lpthread `pkg-config --libs sndfile $(USEAPI)`
 	ifneq ($(MACOS)$(WINDOWS),true)
 		LDFLAGS += -lrt -lc
 	endif
 	GUI_LDFLAGS += -I. -I$(HEADER_DIR) \
 	-L. $(LIB_DIR)libxputty.a  `pkg-config --static --cflags --libs cairo x11` -lm
+else ifeq ($(TARGET), Windows)
+
+	CXXFLAGS += -MMD -std=c++17 $(CFLAGS)
+
+	LDFLAGS += -I. -lm -pthread -lpthread  $(PAWPAW_LFLAGS) `$(PKGCONFIG) --cflags --libs sndfile $(USEAPI)`
+
+	GUI_LDFLAGS += -I$(HEADER_DIR) -static-libgcc -static-libstdc++ \
+	`$(PKGCONFIG) $(PKGCONFIG_FLAGS) --cflags --libs cairo ` \
+	-L. $(LIB_DIR)libxputty.$(STATIC_LIB_EXT) -lm $(PAWPAW_LFLAGS)
+
+	CFLAGS += -I. -I./zita-resampler-1.1.0 -Wall -funroll-loops `pkg-config --cflags sndfile $(USEAPI)`\
+	-ffast-math -fomit-frame-pointer -fstrength-reduce -fdata-sections -Wl,--gc-sections \
+	-pthread $(SSE_CFLAGS)
+
+	EXE := .exe
+endif
+
+
 	# invoke build files
 ifeq ($(MAKECMDGOALS),jack)
 	OBJECTS = xjack.c
@@ -90,8 +109,8 @@ endif
 
 all : check $(NAME)
 	$(QUIET)mkdir -p ../bin
-	$(QUIET)cp ./$(NAME) ../bin
-	@if ! [ -f ../bin/$(NAME) ]; then \
+	$(QUIET)cp ./$(NAME)$(EXE) ../bin
+	@if ! [ -f ../bin/$(NAME)$(EXE) ]; then \
 		$(R_ECHO) "Sorry, build fail$(reset)"; \
 	fi
 
@@ -108,9 +127,9 @@ endif
 
 
 clean :
-	$(QUIET)rm -f *.o *.d *.a *.lib
+	$(QUIET)rm -f *.o *.d *.a *.lib 
 	$(QUIET)rm -f $(RESAMP_DIR)*.a $(RESAMP_DIR)*.lib $(RESAMP_DIR)*.o $(RESAMP_DIR)*.d
-	$(QUIET)rm -f $(NAME)
+	$(QUIET)rm -f $(NAME).exe $(NAME)
 	$(QUIET)rm -rf ../bin
 
 dist-clean :
@@ -140,9 +159,9 @@ $(RESAMP_LIB): $(RESAMP_OBJ)
 
 $(NAME) : $(OBJECTS) $(RESAMP_LIB)
 	@$(B_ECHO) "Build $@ $(reset)"
-	$(QUIET)$(CXX) $(CXXFLAGS) $(OBJECTS) -L. $(RESAMP_LIB) -o $(NAME) $(LDFLAGS) $(GUI_LDFLAGS)
+	$(QUIET)$(CXX) $(CXXFLAGS) $(OBJECTS) -L. $(RESAMP_LIB) -o $(NAME)$(EXE) $(LDFLAGS) $(GUI_LDFLAGS)
 ifneq ($(MAKECMDGOALS),debug)
-	$(QUIET)$(STRIP) -s -x -X -R .note.ABI-tag $(NAME)
+	$(QUIET)$(STRIP) -s -x -X -R .note.ABI-tag $(NAME)$(EXE)
 endif
 	@$(B_ECHO) "=================== DONE =======================$(reset)"
 

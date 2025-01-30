@@ -21,6 +21,7 @@
 #include <string>
 #include <sndfile.hh>
 #include <fstream>
+#include <limits>
 
 #include "CheckResample.h"
 
@@ -117,6 +118,8 @@ public:
     uint32_t samplerate;
     uint32_t jack_sr;
     uint32_t position;
+    uint32_t loopPoint_l;
+    uint32_t loopPoint_r;
     float gain;
     bool loadNew;
     bool play;
@@ -128,6 +131,8 @@ public:
         samplerate = 0;
         jack_sr = 0;
         position = 0;
+        loopPoint_l = 0;
+        loopPoint_r = 1000;
         playNow = 0;
         gain = std::pow(1e+01, 0.05 * 0.0);
         samples = nullptr;
@@ -137,14 +142,21 @@ public:
         usePlayList = false;
         forceReload = false;
         playBackwards = false;
+        blockWriteToPlayList = false;
         viewPlayList = nullptr;
         stream = nullptr;
         if (getenv("XDG_CONFIG_HOME")) {
             std::string path = getenv("XDG_CONFIG_HOME");
-            config_file = path + "/alooper.conf";
+            config_file = path + "/alooper-" + ALVER + ".conf";
         } else {
+        #if defined(__linux__) || defined(__FreeBSD__) || \
+            defined(__NetBSD__) || defined(__OpenBSD__)
             std::string path = getenv("HOME");
-            config_file = path +"/.config/alooper.conf";
+            config_file = path +"/.config/alooper-" + ALVER + ".conf";
+        #else
+            std::string path = getenv("APPDATA");
+            config_file = path +"/.config/alooper-" + ALVER + ".conf";
+        #endif
         }
         readPlayList();
     };
@@ -185,8 +197,10 @@ public:
         AudioLooperUi *self = static_cast<AudioLooperUi*>(w->parent_struct);
         if (!Pa_IsStreamActive(self->stream)) return;
         if(user_data !=NULL) {
-            self->read_soundfile(*(const char**)user_data);
+            self->blockWriteToPlayList = true;
             self->addToPlayList(*(char**)user_data, true);
+            self->read_soundfile(*(const char**)user_data);
+            self->blockWriteToPlayList = false;
         } else {
             fprintf(stderr, "no file selected\n");
         }
@@ -202,10 +216,31 @@ public:
         w = create_window(app, os_get_root_window(app, IS_WINDOW), 0, 0, 400, 170);
         widget_set_title(w, "alooper");
         widget_set_icon_from_png(w,LDVAR(alooper_png));
+        #if defined(__linux__) || defined(__FreeBSD__) || \
+            defined(__NetBSD__) || defined(__OpenBSD__)
         widget_set_dnd_aware(w);
+        #endif
         w->parent_struct = (void*)this;
         w->func.expose_callback = draw_window;
         w->func.dnd_notify_callback = dnd_load_response;
+
+        loopMark_L = add_hslider(w, "",15, 2, 185, 18);
+        loopMark_L->scale.gravity = EASTCENTER;
+        loopMark_L->parent_struct = (void*)this;
+        loopMark_L->adj_x = add_adjustment(loopMark_L,0.0, 0.0, 0.0, 1000.0,1.0, CL_CONTINUOS);
+        loopMark_L->adj = loopMark_L->adj_x;
+        loopMark_L->func.expose_callback = draw_slider;
+        loopMark_L->func.button_release_callback = slider_l_released;
+        loopMark_L->func.value_changed_callback = slider_l_changed_callback;
+
+        loopMark_R = add_hslider(w, "",200, 2, 185, 18);
+        loopMark_R->scale.gravity = WESTCENTER;
+        loopMark_R->parent_struct = (void*)this;
+        loopMark_R->adj_x = add_adjustment(loopMark_R,0.0, 0.0, -1000.0, 0.0,1.0, CL_CONTINUOS);
+        loopMark_R->adj = loopMark_R->adj_x;
+        loopMark_R->func.expose_callback = draw_r_slider;
+        loopMark_R->func.button_release_callback = slider_r_released;
+        loopMark_R->func.value_changed_callback = slider_r_changed_callback;
 
         wview = add_waveview(w, "", 20, 20, 360, 100);
         wview->scale.gravity = NORTHWEST;
@@ -265,12 +300,15 @@ public:
 
         pl.start();
         pl.set<AudioLooperUi, &AudioLooperUi::loadFromPlayList>(this);
+
     }
 
 private:
     Widget_t *w_quit;
     Widget_t *filebutton;
     Widget_t *wview;
+    Widget_t *loopMark_L;
+    Widget_t *loopMark_R;
     Widget_t *paus;
     Widget_t *backset;
     Widget_t *volume;
@@ -288,12 +326,13 @@ private:
     std::mutex WMutex;
     SupportedFormats supportedFormats;
     PaStream* stream;
-    std::vector<std::tuple< std::string, std::string> > PlayList;
-    std::vector<std::tuple< std::string, std::string> >::iterator lfile;
+    std::vector<std::tuple< std::string, std::string, uint32_t, uint32_t> > PlayList;
+    std::vector<std::tuple< std::string, std::string, uint32_t, uint32_t> >::iterator lfile;
     std::vector<std::string> PlayListNames;
     uint32_t playNow;
     bool usePlayList;
     bool forceReload;
+    bool blockWriteToPlayList;
     std::string config_file;
 
 /****************************************************************
@@ -306,7 +345,10 @@ private:
         viewPlayList->flags |= HIDE_ON_DELETE;
         widget_set_title(viewPlayList, "alooper-Playlist");
         widget_set_icon_from_png(viewPlayList,LDVAR(alooper_png));
+        #if defined(__linux__) || defined(__FreeBSD__) || \
+            defined(__NetBSD__) || defined(__OpenBSD__)
         widget_set_dnd_aware(viewPlayList);
+        #endif
         viewPlayList->parent_struct = (void*)this;
         viewPlayList->func.expose_callback = draw_window;
         viewPlayList->func.dnd_notify_callback = dnd_load_playlist;
@@ -358,35 +400,35 @@ private:
     // triggered by audio server when end of current file is reached
     void loadFromPlayList() {
         if (((PlayList.size() < 2) || !usePlayList) && !forceReload) return;
+        #if defined(__linux__) || defined(__FreeBSD__) || \
+            defined(__NetBSD__) || defined(__OpenBSD__)
+        XLockDisplay(w->app->dpy);
+        #endif
         forceReload = false;
+        blockWriteToPlayList = true;
         playNow++;
         lfile = PlayList.begin()+playNow;
         if (lfile >= PlayList.end()) {
             lfile = PlayList.begin();
             playNow = 0;
         }
-        #if defined(__linux__) || defined(__FreeBSD__) || \
-            defined(__NetBSD__) || defined(__OpenBSD__)
-        XLockDisplay(w->app->dpy);
-        #endif
         listbox_set_active_entry(playList, playNow);
+        
+        read_soundfile(std::get<1>(*lfile).c_str(), true);
+        blockWriteToPlayList = false;
         #if defined(__linux__) || defined(__FreeBSD__) || \
             defined(__NetBSD__) || defined(__OpenBSD__)
         XFlush(w->app->dpy);
         XUnlockDisplay(w->app->dpy);
         #endif
-
-        read_soundfile(std::get<1>(*lfile).c_str());
     }
 
     // add a file to the Play List
     void addToPlayList(void* fileName, bool laod) {
-        PlayList.push_back(std::tuple<std::string, std::string>(
-            std::string(basename((char*)fileName)), std::string((const char*)fileName)));
-        #if defined(__linux__) || defined(__FreeBSD__) || \
-            defined(__NetBSD__) || defined(__OpenBSD__)
-        XLockDisplay(w->app->dpy);
-        #endif
+        PlayList.push_back(std::tuple<std::string, std::string, uint32_t, uint32_t>(
+            std::string(basename((char*)fileName)), std::string((const char*)fileName),
+            0, (uint32_t)INT_MAX));
+        if (!viewPlayList) createPlayListView(w->app);
         auto it = PlayList.end()-1;
         listbox_add_entry(playList, std::get<0>(*it).c_str());
         if (laod) playNow = PlayList.size()-1;
@@ -396,11 +438,6 @@ private:
             if (laod) listbox_set_active_entry(playList, playNow);
             widget_show_all(playList);
         }
-        #if defined(__linux__) || defined(__FreeBSD__) || \
-            defined(__NetBSD__) || defined(__OpenBSD__)
-        XFlush(w->app->dpy);
-        XUnlockDisplay(w->app->dpy);
-        #endif
     }
 
     // handle drag and drop for the Play List window
@@ -409,6 +446,7 @@ private:
         AudioLooperUi *self = static_cast<AudioLooperUi*>(w->parent_struct);
         if (!Pa_IsStreamActive(self->stream)) return;
         if (user_data != NULL) {
+            self->blockWriteToPlayList = true;
             char* dndfile = NULL;
             dndfile = strtok(*(char**)user_data, "\r\n");
             while (dndfile != NULL) {
@@ -421,6 +459,7 @@ private:
                 }
                 dndfile = strtok(NULL, "\r\n");
             }
+            self->blockWriteToPlayList = false;
         }
     }
 
@@ -482,9 +521,11 @@ private:
         self->PlayList.clear();
         self->load_PlayList(self->PlayListNames[v].c_str());
         self->rebuildPlayList();
+        if (!self->PlayList.size()) return;
         if (!self->samples) {
-            auto i = self->PlayList.begin();
-            self->read_soundfile(std::get<1>(*i).c_str());
+            self->lfile = self->PlayList.begin();
+            self->playNow = 0;
+            self->read_soundfile(std::get<1>(*self->lfile).c_str(), true);
         } else {
             self->playNow = self->PlayList.size()-1;
         }
@@ -565,12 +606,14 @@ private:
     void save_PlayList(std::string lname, bool append) {
         std::ofstream outfile(config_file, append ? std::ios::app : std::ios::trunc);
         if (outfile.is_open()) {
-             outfile << "[PlayList] "<< lname << std::endl;
-             for (auto i = PlayList.begin(); i != PlayList.end(); i++) {
+            outfile << "[PlayList] "<< lname << std::endl;
+            for (auto i = PlayList.begin(); i != PlayList.end(); i++) {
                 outfile << "[File] "<< std::get<1>(*i) << std::endl;
-             }
-         }
-         outfile.close();
+                outfile << "[LoopPointL] "<< std::get<2>(*i) << std::endl;
+                outfile << "[LoopPointR] "<< std::get<3>(*i) << std::endl;
+            }
+        }
+        outfile.close();
     }
 
     // load a Play List by given name
@@ -580,6 +623,9 @@ private:
         std::string key;
         std::string value;
         std::string ListName;
+        std::string fileName;
+        uint32_t lPointL = 0;
+        uint32_t lPointR = INT_MAX;
         if (infile.is_open()) {
             while (std::getline(infile, line)) {
                 std::istringstream buf(line);
@@ -588,9 +634,13 @@ private:
                 if (key.compare("[PlayList]") == 0) ListName = remove_sub(line, "[PlayList] ");
                 if (ListName.compare(LoadName) == 0) {
                     if (key.compare("[File]") == 0) {
-                        std::string fileName = remove_sub(line, "[File] ");
-                        PlayList.push_back(std::tuple<std::string, std::string>(
-                            std::string(basename((char*)fileName.c_str())), fileName));
+                        fileName = remove_sub(line, "[File] ");
+                    } else if (key.compare("[LoopPointL]") == 0) {
+                        lPointL = std::stoi(value);
+                    } else if (key.compare("[LoopPointR]") == 0) {
+                        lPointR = std::stoi(value);
+                        PlayList.push_back(std::tuple<std::string, std::string, uint32_t, uint32_t>(
+                            std::string(basename((char*)fileName.c_str())), fileName, lPointL, lPointR));
                     }
                 }
                 key.clear();
@@ -626,22 +676,13 @@ private:
 
     // when Sound File loading fail, clear wave view and reset tittle
     void failToLoad() {
-        #if defined(__linux__) || defined(__FreeBSD__) || \
-            defined(__NetBSD__) || defined(__OpenBSD__)
-        XLockDisplay(w->app->dpy);
-        #endif
         loadNew = true;
         update_waveview(wview, samples, samplesize);
         widget_set_title(w, "alooper");
-        #if defined(__linux__) || defined(__FreeBSD__) || \
-            defined(__NetBSD__) || defined(__OpenBSD__)
-        XFlush(w->app->dpy);
-        XUnlockDisplay(w->app->dpy);
-        #endif
     }
 
     // load Sound File data into memory
-    void read_soundfile(const char* file) {
+    void read_soundfile(const char* file, bool haveLoopPoints = false) {
         // struct to hols sound file info
         SF_INFO info;
         info.format = 0;
@@ -685,28 +726,43 @@ private:
         sf_close(sndfile);
         samples = checkSampleRate(&samplesize, channels, samples, samplerate, jack_sr);
         loadNew = true;
-        #if defined(__linux__) || defined(__FreeBSD__) || \
-            defined(__NetBSD__) || defined(__OpenBSD__)
-        XLockDisplay(w->app->dpy);
-        #endif
         if (samples) {
             adj_set_max_value(wview->adj, (float)samplesize);
+            //adj_set_max_value(loopMark_L->adj, (float)samplesize*0.5);
+            adj_set_state(loopMark_L->adj, 0.0);
+            loopPoint_l = 0;
+            //adj_set_max_value(loopMark_R->adj, (float)samplesize*0.5);
+            adj_set_state(loopMark_R->adj,1.0);
+            loopPoint_r = samplesize;
+            if (haveLoopPoints) {
+               // fprintf(stderr, "loopPoint_l = %u, loopPoint_r= %u\n",std::get<2>(*lfile), std::get<3>(*lfile));
+                if (std::get<3>(*lfile) == (uint32_t) INT_MAX)
+                    std::get<3>(*lfile) = samplesize;
+            }
+            
             update_waveview(wview, samples, samplesize);
             char name[256];
             strncpy(name, file, 255);
             widget_set_title(w, basename(name));
-            #if defined(__linux__) || defined(__FreeBSD__) || \
-                defined(__NetBSD__) || defined(__OpenBSD__)
-            XFlush(w->app->dpy);
-            XUnlockDisplay(w->app->dpy);
-            #endif
         } else {
             samplesize = 0;
             std::cerr << "Error: could not resample file" << std::endl;
             failToLoad();
         }
         if (playBackwards) position = samplesize;
+        if (haveLoopPoints) setLoopPoints();
         ready = true;
+    }
+
+    void setLoopPoints() {
+        float point_l = static_cast<float>(std::get<2>(*lfile));
+        float upper_l = static_cast<float>(samplesize*0.5);
+        float point_r = static_cast<float>(std::get<3>(*lfile) - upper_l);
+        position = std::get<2>(*lfile)+1;
+        loopPoint_l = std::get<2>(*lfile);
+        loopPoint_r = std::get<3>(*lfile);
+        adj_set_state(loopMark_L->adj, point_l/upper_l);
+        adj_set_state(loopMark_R->adj, point_r/upper_l);
     }
 
 /****************************************************************
@@ -718,18 +774,20 @@ private:
         AudioLooperUi *self = static_cast<AudioLooperUi*>(w->parent_struct);
         if (!Pa_IsStreamActive(self->stream)) return;
         if (user_data != NULL) {
+            self->blockWriteToPlayList = true;
             char* dndfile = NULL;
             dndfile = strtok(*(char**)user_data, "\r\n");
             while (dndfile != NULL) {
                 if (self->supportedFormats.isSupported(dndfile) ) {
-                    self->read_soundfile(dndfile);
                     self->addToPlayList(dndfile, true);
+                    self->read_soundfile(dndfile);
                     break;
                 } else {
                     std::cerr << "Unrecognized file extension: " << dndfile << std::endl;
                 }
                 dndfile = strtok(NULL, "\r\n");
             }
+            self->blockWriteToPlayList = false;
         }
     }
 
@@ -795,6 +853,90 @@ private:
         }
     }
 
+    // set left loop point by mouse move/scroll
+    static void slider_l_changed_callback(void *w_, void* user_data) {
+        Widget_t *w = (Widget_t*)w_;
+        AudioLooperUi *self = static_cast<AudioLooperUi*>(w->parent_struct);
+        float st = adj_get_state(w->adj);
+        uint32_t lp = (self->samplesize *0.5) * st;
+        if (lp > self->position) {
+            lp = self->position;
+            st = max(0.0, min(1.0, self->position/(self->samplesize*0.5)));
+        }
+        adj_set_state(w->adj, st);
+        self->loopPoint_l = lp;
+        if (w->flags & HAS_POINTER && !self->blockWriteToPlayList) {
+            std::get<2>(*(self->PlayList.begin()+self->playNow)) = self->loopPoint_l;
+        }
+    }
+
+    // set left loop point by mouse right click
+    static void slider_l_released(void *w_, void* xbutton_, void* user_data) {
+        Widget_t *w = (Widget_t*)w_;
+        AudioLooperUi *self = static_cast<AudioLooperUi*>(w->parent_struct);
+        XButtonEvent *xbutton = (XButtonEvent*)xbutton_;
+        if (w->flags & HAS_POINTER) {
+            if(xbutton->state == Button3Mask) {
+                Metrics_t metrics;
+                os_get_window_metrics(w, &metrics);
+                int width = metrics.width;
+                int x = xbutton->x;
+                float st = max(0.0, min(1.0, static_cast<float>((float)x/(float)width)));
+                uint32_t lp = (self->samplesize *0.5) * st;
+                if (lp > self->position) {
+                    lp = self->position;
+                    st = max(0.0, min(1.0, self->position/(self->samplesize*0.5)));
+                }
+                adj_set_state(w->adj, st);
+                self->loopPoint_l = lp;
+                std::get<2>(*(self->PlayList.begin()+self->playNow)) = self->loopPoint_l;
+            }
+        }
+        expose_widget(w);
+    }
+
+    // set right loop point by mouse move/scroll
+    static void slider_r_changed_callback(void *w_, void* user_data) {
+        Widget_t *w = (Widget_t*)w_;
+        AudioLooperUi *self = static_cast<AudioLooperUi*>(w->parent_struct);
+        float st = adj_get_state(w->adj);
+        uint32_t lp = (self->samplesize *0.5) + ((self->samplesize*0.5) * st);
+        if (lp < self->position) {
+            lp = self->position;
+            st = max(0.0, min(1.0, (self->position - (self->samplesize*0.5))/(self->samplesize*0.5)));
+        }
+        adj_set_state(w->adj, st);
+        self->loopPoint_r = lp;
+        if (w->flags & HAS_POINTER && !self->blockWriteToPlayList) {
+            std::get<3>(*(self->PlayList.begin()+self->playNow)) = self->loopPoint_r;
+        }
+    }
+
+    // set right loop point by mouse right click
+    static void slider_r_released(void *w_, void* xbutton_, void* user_data) {
+        Widget_t *w = (Widget_t*)w_;
+        AudioLooperUi *self = static_cast<AudioLooperUi*>(w->parent_struct);
+        XButtonEvent *xbutton = (XButtonEvent*)xbutton_;
+        if (w->flags & HAS_POINTER) {
+            if(xbutton->state == Button3Mask) {
+                Metrics_t metrics;
+                os_get_window_metrics(w, &metrics);
+                int width = metrics.width;
+                int x = xbutton->x;
+                float st = max(0.0, min(1.0, static_cast<float>((float)x/(float)width)));
+                uint32_t lp = (self->samplesize *0.5) + ((self->samplesize*0.5) * st);
+                if (lp < self->position) {
+                    lp = self->position;
+                    st = max(0.0, min(1.0, (self->position - (self->samplesize*0.5))/(self->samplesize*0.5)));
+                }
+                adj_set_state(w->adj, st);
+                self->loopPoint_r = lp;
+                std::get<3>(*(self->PlayList.begin()+self->playNow)) = self->loopPoint_r;
+            }
+        }
+        expose_widget(w);
+    }
+
     // set playhead position to mouse pointer
     static void set_playhead(void *w_, void* xbutton_, void* user_data) {
         Widget_t *w = (Widget_t*)w_;
@@ -807,7 +949,10 @@ private:
                 int width = metrics.width;
                 int x = xbutton->x;
                 float st = max(0.0, min(1.0, static_cast<float>((float)x/(float)width)));
-                self->position = adj_get_max_value(w->adj) * st;
+                uint32_t lp = adj_get_max_value(w->adj) * st;
+                if (lp > self->loopPoint_r) lp = self->loopPoint_r;
+                if (lp < self->loopPoint_l) lp = self->loopPoint_l;
+                self->position = lp;
             }
         }
     }
@@ -840,6 +985,48 @@ private:
 /****************************************************************
                       drawings 
 ****************************************************************/
+
+    static void draw_slider(void *w_, void* user_data) {
+        Widget_t *w = (Widget_t*)w_;
+        Metrics_t metrics;
+        os_get_window_metrics(w, &metrics);
+        int width = metrics.width;
+        int height = metrics.height;
+        if (!metrics.visible) return;
+        float center = (float)height/2;
+        float upcenter = (float)height;
+        
+        float sliderstate = adj_get_state(w->adj_x);
+
+        use_fg_color_scheme(w, get_color_state(w));
+        float point = 5.0 + ((width - 5.0) * sliderstate);
+        cairo_move_to (w->crb, point - 5.0, center);
+        cairo_line_to(w->crb, point + 5.0, center);
+        cairo_line_to(w->crb, point , upcenter);
+        cairo_line_to(w->crb, point - 5.0 , center);
+        cairo_fill(w->crb);
+    }
+
+    static void draw_r_slider(void *w_, void* user_data) {
+        Widget_t *w = (Widget_t*)w_;
+        Metrics_t metrics;
+        os_get_window_metrics(w, &metrics);
+        int width = metrics.width;
+        int height = metrics.height;
+        if (!metrics.visible) return;
+        float center = (float)height/2;
+        float upcenter = (float)height;
+        
+        float sliderstate = adj_get_state(w->adj_x);
+
+        use_fg_color_scheme(w, get_color_state(w));
+        float point =  ((width-5.0) * sliderstate);
+        cairo_move_to (w->crb, point - 5.0, center);
+        cairo_line_to(w->crb, point + 5.0, center);
+        cairo_line_to(w->crb, point , upcenter);
+        cairo_line_to(w->crb, point - 5.0 , center);
+        cairo_fill(w->crb);
+    }
 
     void roundrec(cairo_t *cr, float x, float y, float width, float height, float r) {
         cairo_arc(cr, x+r, y+r, r, M_PI, 3*M_PI/2);
@@ -972,8 +1159,22 @@ private:
 
         double state = adj_get_state(w->adj);
         cairo_set_source_rgba(w->crb, 0.55, 0.05, 0.05, 1);
-        cairo_rectangle(w->crb, 1+(width-2)*state,2,3, height-4);
+        cairo_rectangle(w->crb, (width * state) - 1.5,2,3, height-4);
         cairo_fill(w->crb);
+
+        int halfWidth = width*0.5;
+
+        double state_l = adj_get_state(self->loopMark_L->adj);
+        cairo_set_source_rgba(w->crb, 0.25, 0.25, 0.05, 0.666);
+        cairo_rectangle(w->crb, 0, 2, (halfWidth*state_l), height-4);
+        cairo_fill(w->crb);
+
+        double state_r = adj_get_state(self->loopMark_R->adj);
+        cairo_set_source_rgba(w->crb, 0.25, 0.25, 0.05, 0.666);
+        int point = halfWidth + (halfWidth*state_r);
+        cairo_rectangle(w->crb, point, 2 , width - point, height-4);
+        cairo_fill(w->crb);
+
     }
 
     static void boxShadowOutset(cairo_t* const cr, int x, int y, int width, int height, bool fill) {
