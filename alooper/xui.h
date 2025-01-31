@@ -223,6 +223,7 @@ public:
         w->parent_struct = (void*)this;
         w->func.expose_callback = draw_window;
         w->func.dnd_notify_callback = dnd_load_response;
+        w->func.key_press_callback = key_press;
 
         loopMark_L = add_hslider(w, "",15, 2, 185, 18);
         loopMark_L->scale.gravity = EASTCENTER;
@@ -249,6 +250,7 @@ public:
         wview->adj = wview->adj_x;
         wview->func.expose_callback = draw_wview;
         wview->func.button_release_callback = set_playhead;
+        wview->func.key_press_callback = key_press;
 
         filebutton = add_file_button(w, 20, 130, 30, 30, getenv("HOME") ? getenv("HOME") : "/", "audio");
         filebutton->scale.gravity = SOUTHEAST;
@@ -804,6 +806,7 @@ private:
         wview->func.adj_callback = dummy_callback;
         #endif
         adj_set_value(wview->adj, (float) position);
+        if (!ready) transparent_draw(wview, nullptr);
         #if defined(__linux__) || defined(__FreeBSD__) || \
             defined(__NetBSD__) || defined(__OpenBSD__)
         expose_widget(wview);
@@ -823,6 +826,19 @@ private:
         AudioLooperUi *self = static_cast<AudioLooperUi*>(w->parent_struct);
         if (w->flags & HAS_POINTER && !*(int*)user_data){
             self->onExit();
+        }
+    }
+
+    // toggle pause button with space bar
+    static void key_press(void *w_, void *key_, void *user_data) {
+        Widget_t *w = (Widget_t*)w_;
+        if (!w) return;
+        XKeyEvent *key = (XKeyEvent*)key_;
+        if (!key) return;
+        AudioLooperUi *self = static_cast<AudioLooperUi*>(w->parent_struct);
+        if (key->keycode == XKeysymToKeycode(w->app->dpy, XK_space)) {
+            adj_set_value(self->paus->adj, !adj_get_value(self->paus->adj));
+            self->play = adj_get_value(self->paus->adj) ? false : true;
         }
     }
 
@@ -1113,7 +1129,7 @@ private:
         cairo_line_to(cri, width, half_height_t);
         cairo_stroke(cri);
 
-        if (wave_view->size<1) return;
+        if (wave_view->size<1 || !ready) return;
         int step = (wave_view->size/width)/channels;
         float lstep = (float)(half_height_t)/channels;
         cairo_set_line_width(cri,2);
@@ -1142,14 +1158,24 @@ private:
         if (!metrics.visible) return;
         AudioLooperUi *self = static_cast<AudioLooperUi*>(w->parent_struct);
         int width, height;
+        static bool clearImage = false;
+        static bool clearImageDone = false;
+        if (!self->ready && !clearImageDone) clearImage = true;
         if (w->image) {
             os_get_surface_size(w->image, &width, &height);
-            if ((width != width_t || height != height_t) || self->loadNew) {
+            if (((width != width_t || height != height_t) || self->loadNew) && self->ready) {
                 self->loadNew = false;
+                clearImageDone = false;
                 self->create_waveview_image(w, width_t, height_t);
                 os_get_surface_size(w->image, &width, &height);
             }
         } else {
+            self->create_waveview_image(w, width_t, height_t);
+            os_get_surface_size(w->image, &width, &height);
+        }
+        if (clearImage) {
+            clearImage = false;
+            clearImageDone = true;
             self->create_waveview_image(w, width_t, height_t);
             os_get_surface_size(w->image, &width, &height);
         }
@@ -1174,7 +1200,51 @@ private:
         int point = halfWidth + (halfWidth*state_r);
         cairo_rectangle(w->crb, point, 2 , width - point, height-4);
         cairo_fill(w->crb);
+        if (!self->ready) 
+            show_spinning_wheel(w, nullptr);
 
+    }
+
+    void drawWheel(cairo_t* const cr, float di, int x, int y, int radius, float w) {
+        cairo_set_line_width(cr,10);
+        cairo_set_line_cap (cr, CAIRO_LINE_CAP_ROUND);
+        int i;
+        const int d = 1;
+        for (i=375; i<455; i++) {
+            double angle = i * 0.01 * 2 * M_PI;
+            double rx = radius * sin(angle);
+            double ry = radius * cos(angle);
+            double length_x = x - rx;
+            double length_y = y + ry;
+            double radius_x = x - rx * w ;
+            double radius_y = y + ry * w ;
+            double z = radius_y/100.0;
+            if ((int)di < d) {
+                cairo_set_source_rgba(cr, 0.16/z, 0.16/z, 0.16/z, 0.3);
+                cairo_move_to(cr, radius_x, radius_y);
+                cairo_line_to(cr,length_x,length_y);
+                cairo_stroke_preserve(cr);
+            }
+            di++;
+            if (di>8.0) di = 0.0;
+       }
+    }
+
+    static void show_spinning_wheel(void *w_, void* user_data) {
+        Widget_t *w = (Widget_t*)w_;
+        Metrics_t metrics;
+        os_get_window_metrics(w, &metrics);
+        int width = metrics.width;
+        int height = metrics.height;
+        if (!metrics.visible) return;
+        AudioLooperUi *self = static_cast<AudioLooperUi*>(w->parent_struct);
+        static const float sCent = 0.666;
+        static float collectCents = 0;
+        collectCents -= sCent;
+        if (collectCents>8.0) collectCents = 0.0;
+        else if (collectCents<0.0) collectCents = 8.0;
+        self->drawWheel (w->crb, collectCents,width*0.5, height*0.5, height*0.3, 0.98);
+        cairo_stroke(w->crb);
     }
 
     static void boxShadowOutset(cairo_t* const cr, int x, int y, int width, int height, bool fill) {
