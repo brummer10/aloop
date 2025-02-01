@@ -127,8 +127,12 @@ public:
     bool playBackwards;
 
     AudioLooperUi() {
+        channels = 0;
         samplesize = 0;
         samplerate = 0;
+        pre_channels = 0;
+        pre_samplesize = 0;
+        pre_samplerate = 0;
         jack_sr = 0;
         position = 0;
         loopPoint_l = 0;
@@ -136,6 +140,9 @@ public:
         playNow = 0;
         gain = std::pow(1e+01, 0.05 * 0.0);
         samples = nullptr;
+        pre_samples = nullptr;
+        pre_load = false;
+        is_loaded = false;
         loadNew = false;
         play = true;
         ready = true;
@@ -163,6 +170,7 @@ public:
 
     ~AudioLooperUi() {
         delete[] samples;
+        delete[] pre_samples;
         pl.stop();
         pa.stop();
         PlayList.clear();
@@ -197,6 +205,7 @@ public:
         AudioLooperUi *self = static_cast<AudioLooperUi*>(w->parent_struct);
         if (!Pa_IsStreamActive(self->stream)) return;
         if(user_data !=NULL) {
+            self->pre_load = false;
             self->blockWriteToPlayList = true;
             self->addToPlayList(*(char**)user_data, true);
             self->read_soundfile(*(const char**)user_data);
@@ -264,6 +273,12 @@ public:
         widget_get_png(lview, LDVAR(menu_png));
         lview->func.value_changed_callback = button_lview_callback;
 
+        saveLoop = add_save_file_button(w, 90, 130, 30, 30, getenv("HOME") ? getenv("HOME") : "/", "audio");
+        saveLoop->parent_struct = (void*)this;
+        saveLoop->scale.gravity = SOUTHEAST;
+        widget_get_png(saveLoop, LDVAR(save__png));
+        saveLoop->func.user_callback = write_soundfile;
+
         volume = add_knob(w, "dB",220,130,28,28);
         volume->parent_struct = (void*)this;
         volume->scale.gravity = SOUTHWEST;
@@ -324,6 +339,7 @@ private:
     Widget_t *loadPlayList;
     Widget_t *savePlayList;
     Widget_t *LoadMenu;
+    Widget_t *saveLoop;
     std::condition_variable *SyncWait;
     std::mutex WMutex;
     SupportedFormats supportedFormats;
@@ -336,6 +352,12 @@ private:
     bool forceReload;
     bool blockWriteToPlayList;
     std::string config_file;
+    float *pre_samples;
+    uint32_t pre_channels;
+    uint32_t pre_samplesize;
+    uint32_t pre_samplerate;
+    bool pre_load;
+    bool is_loaded;
 
 /****************************************************************
             PlayList - create the window
@@ -402,18 +424,20 @@ private:
     // triggered by audio server when end of current file is reached
     void loadFromPlayList() {
         if (((PlayList.size() < 2) || !usePlayList) && !forceReload) return;
-        #if defined(__linux__) || defined(__FreeBSD__) || \
-            defined(__NetBSD__) || defined(__OpenBSD__)
-        XLockDisplay(w->app->dpy);
-        #endif
-        forceReload = false;
-        blockWriteToPlayList = true;
         playNow++;
         lfile = PlayList.begin()+playNow;
         if (lfile >= PlayList.end()) {
             lfile = PlayList.begin();
             playNow = 0;
         }
+        if (!pre_load)
+            preload_soundfile(std::get<1>(*lfile).c_str(), true);
+        #if defined(__linux__) || defined(__FreeBSD__) || \
+            defined(__NetBSD__) || defined(__OpenBSD__)
+        XLockDisplay(w->app->dpy);
+        #endif
+        forceReload = false;
+        blockWriteToPlayList = true;
         listbox_set_active_entry(playList, playNow);
         
         read_soundfile(std::get<1>(*lfile).c_str(), true);
@@ -423,6 +447,11 @@ private:
         XFlush(w->app->dpy);
         XUnlockDisplay(w->app->dpy);
         #endif
+        auto it = lfile + 1;
+        if (it >= PlayList.end()) {
+            it = PlayList.begin();
+        }
+        preload_soundfile(std::get<1>(*it).c_str(), false);
     }
 
     // add a file to the Play List
@@ -453,6 +482,7 @@ private:
             dndfile = strtok(*(char**)user_data, "\r\n");
             while (dndfile != NULL) {
                 if (self->supportedFormats.isSupported(dndfile) ) {
+                    self->pre_load = false;
                     if (!self->PlayList.size()) self->read_soundfile(dndfile);
                     self->addToPlayList(dndfile, false);
                     self->forceReload = true;
@@ -486,6 +516,7 @@ private:
             self->PlayList.erase(self->PlayList.begin() + remove);
             self->rebuildPlayList();
             self->forceReload = true;
+            self->pre_load = false;
         }
     }
 
@@ -499,6 +530,7 @@ private:
             if (!up) return;
             std::swap(self->PlayList[up-1],self->PlayList[up]);
             self->rebuildPlayList();
+            self->pre_load = false;
         }
     }
 
@@ -512,6 +544,7 @@ private:
             if (down > static_cast<int>(self->PlayList.size()-1)) return;
             std::swap(self->PlayList[down],self->PlayList[down+1]);
             self->rebuildPlayList();
+            self->pre_load = false;
         }
     }
 
@@ -525,11 +558,15 @@ private:
         self->rebuildPlayList();
         if (!self->PlayList.size()) return;
         if (!self->samples) {
+            self->ready = false;
             self->lfile = self->PlayList.begin();
-            self->playNow = 0;
-            self->read_soundfile(std::get<1>(*self->lfile).c_str(), true);
+            self->playNow = self->PlayList.size();
+            if (self->pl.getProcess()) self->pl.runProcess();
         } else {
             self->playNow = self->PlayList.size()-1;
+            self->pre_load = false;
+            delete[] self->pre_samples;
+            self->pre_samples = nullptr;
         }
     }
 
@@ -562,14 +599,9 @@ private:
             std::string lname(*(const char**)user_data);
             if (std::find(self->PlayListNames.begin(), self->PlayListNames.end(), lname) 
                                                             != self->PlayListNames.end()) {
-                Widget_t* dia = self->showTextEntry(self->viewPlayList, 
-                            "Playlist - name already exists:", "Choose a other name:");
-                int x1, y1;
-                os_translate_coords( self->viewPlayList, self->viewPlayList->widget, 
-                    os_get_root_window(self->w->app, IS_WIDGET), 0, 0, &x1, &y1);
-                os_move_window(self->w->app->dpy,dia,x1+60, y1+16);
-                self->viewPlayList->func.dialog_callback = save_response;
-            } else {
+                self->remove_PlayList(lname);
+                self->save_PlayList(lname, true);
+           } else {
                 self->save_PlayList(lname, true);
             }
         }
@@ -604,7 +636,43 @@ private:
         return (a);
     }
 
-    // save a Play List to file
+    // remove a Play List from the config file
+    void remove_PlayList(std::string LoadName) {
+        std::ifstream infile(config_file);
+        std::ofstream outfile(config_file + "temp");
+        std::string line;
+        std::string key;
+        std::string value;
+        std::string ListName;
+        if (infile.is_open() && outfile.is_open()) {
+            while (std::getline(infile, line)) {
+                bool save = true;
+                std::istringstream buf(line);
+                buf >> key;
+                buf >> value;
+                if (key.compare("[PlayList]") == 0) ListName = remove_sub(line, "[PlayList] ");
+                if (ListName.compare(LoadName) == 0) {
+                    save = false;
+                    if (key.compare("[File]") == 0) {
+                        save = false;
+                    } else if (key.compare("[LoopPointL]") == 0) {
+                        save = false;
+                    } else if (key.compare("[LoopPointR]") == 0) {
+                        save = false;
+                    }
+                }
+                if (save) outfile << line<< std::endl;
+                key.clear();
+                value.clear();
+            }
+        infile.close();
+        outfile.close();
+        std::remove(config_file.c_str());
+        std::rename((config_file + "temp").c_str(), config_file.c_str());
+        }
+    }
+
+    // save a Play List to the config file
     void save_PlayList(std::string lname, bool append) {
         std::ofstream outfile(config_file, append ? std::ios::app : std::ios::trunc);
         if (outfile.is_open()) {
@@ -673,7 +741,33 @@ private:
     }
 
 /****************************************************************
-                      File loading
+                    save Sound File
+****************************************************************/
+
+    // save a loop to file
+    static void write_soundfile(void *w_, void* user_data) {
+        Widget_t *w = (Widget_t*)w_;
+        if(user_data !=NULL && strlen(*(const char**)user_data)) {
+            AudioLooperUi *self = static_cast<AudioLooperUi*>(w->parent_struct);
+            if (!self->samples) return;
+            std::string lname(*(const char**)user_data);
+            SF_INFO sfinfo ;
+            sfinfo.channels = self->channels;
+            sfinfo.samplerate = self->jack_sr;
+            sfinfo.format = SF_FORMAT_WAV | SF_FORMAT_FLOAT  ;
+            SNDFILE * sf = sf_open(lname.c_str(), SFM_WRITE, &sfinfo);
+            if (!sf) {
+                std::cerr << "fail to open " << lname << std::endl;
+                return;
+            }
+            sf_writef_float(sf,&self->samples[self->loopPoint_l], self->loopPoint_r - self->loopPoint_l);
+            sf_write_sync(sf);
+            sf_close(sf);
+        }
+    }
+
+/****************************************************************
+                    Sound File loading
 ****************************************************************/
 
     // when Sound File loading fail, clear wave view and reset tittle
@@ -683,8 +777,46 @@ private:
         widget_set_title(w, "alooper");
     }
 
-    // load Sound File data into memory
-    void read_soundfile(const char* file, bool haveLoopPoints = false) {
+    // pre-load a Sound File on demand
+    void preload_soundfile(const char* file, bool block_play = false) {
+        if (block_play) ready = false;
+        SF_INFO info;
+        info.format = 0;
+
+        pre_channels = 0;
+        pre_samplesize = 0;
+        pre_samplerate = 0;
+        delete[] pre_samples;
+        pre_samples = nullptr;
+        // Open the wave file for reading
+        SNDFILE *sndfile = sf_open(file, SFM_READ, &info);
+
+        if (!sndfile) {
+            std::cerr << "Error: could not open file " << sf_error (sndfile) << std::endl;
+            return ;
+        }
+        if (info.channels > 2) {
+            std::cerr << "Error: only two channels maximum are supported!" << std::endl;
+            return ;
+        }
+        try {
+            pre_samples = new float[info.frames * info.channels];
+        } catch (...) {
+            std::cerr << "Error: could not load file" << std::endl;
+            return;
+        }
+        memset(pre_samples, 0, info.frames * info.channels * sizeof(float));
+        pre_samplesize = (uint32_t) sf_readf_float(sndfile, &pre_samples[0], info.frames);
+        if (!pre_samplesize ) pre_samplesize = info.frames;
+        pre_channels = info.channels;
+        pre_samplerate = info.samplerate;
+        sf_close(sndfile);
+        pre_samples = checkSampleRate(&pre_samplesize, pre_channels, pre_samples, pre_samplerate, jack_sr);
+        if (pre_samples) pre_load = true;
+    }
+
+    // load a Sound File when pre-load is the wrong file
+    void load_soundfile(const char* file) {
         // struct to hols sound file info
         SF_INFO info;
         info.format = 0;
@@ -727,6 +859,34 @@ private:
         position = 0;
         sf_close(sndfile);
         samples = checkSampleRate(&samplesize, channels, samples, samplerate, jack_sr);
+        if (samples) is_loaded = true;
+    }
+
+    // load Sound File data into memory
+    void read_soundfile(const char* file, bool haveLoopPoints = false) {
+        if (!pre_load) {
+            if (!is_loaded) {
+                load_soundfile(file);
+                is_loaded = false;
+            }
+        } else {
+            fprintf(stderr, "load pre loaded %s\n", file);
+            channels = 0;
+            samplesize = 0;
+            samplerate = 0;
+            position = 0;
+            std::unique_lock<std::mutex> lk(WMutex);
+            SyncWait->wait(lk);
+            delete[] samples;
+            samples = nullptr;
+            samples = pre_samples;
+            pre_samples = nullptr;
+            channels = pre_channels;
+            samplesize = pre_samplesize;
+            samplerate = pre_samplerate;
+            pre_load = false;
+            
+        }
         loadNew = true;
         if (samples) {
             adj_set_max_value(wview->adj, (float)samplesize);
@@ -781,8 +941,11 @@ private:
             dndfile = strtok(*(char**)user_data, "\r\n");
             while (dndfile != NULL) {
                 if (self->supportedFormats.isSupported(dndfile) ) {
+                    self->pre_load = false;
+                    self->forceReload = true;
                     self->addToPlayList(dndfile, true);
-                    self->read_soundfile(dndfile);
+                    self->playNow = self->PlayList.size() -2;
+                    if (self->pl.getProcess()) self->pl.runProcess();
                     break;
                 } else {
                     std::cerr << "Unrecognized file extension: " << dndfile << std::endl;
@@ -839,6 +1002,11 @@ private:
         if (key->keycode == XKeysymToKeycode(w->app->dpy, XK_space)) {
             adj_set_value(self->paus->adj, !adj_get_value(self->paus->adj));
             self->play = adj_get_value(self->paus->adj) ? false : true;
+        } else if (key->keycode == XKeysymToKeycode(w->app->dpy, XK_Left)) {
+            adj_set_value(self->backwards->adj, !adj_get_value(self->backwards->adj));
+            self->playBackwards = adj_get_value(self->backwards->adj) ? true : false;
+        } else if (key->keycode == XKeysymToKeycode(w->app->dpy, XK_q)) {
+            self->onExit();
         }
     }
 
@@ -1137,6 +1305,17 @@ private:
 
         int pos = half_height_t/channels;
         for (int c = 0; c < (int)channels; c++) {
+            cairo_pattern_t *pat = cairo_pattern_create_linear (0, pos, 0, height);
+            cairo_pattern_add_color_stop_rgba
+                (pat, 0,1.53,0.33,0.33, 1.0);
+            cairo_pattern_add_color_stop_rgba
+                (pat, 0.7,0.53,0.33,0.33, 1.0);
+            cairo_pattern_add_color_stop_rgba
+                (pat, 0.3,0.33,0.53,0.33, 1.0);
+            cairo_pattern_add_color_stop_rgba
+                (pat, 0, 0.55, 0.55, 0.55, 1.0);
+            cairo_pattern_set_extend(pat, CAIRO_EXTEND_REFLECT);
+            cairo_set_source(cri, pat);
             for (int i=0;i<width-4;i++) {
                 cairo_move_to(cri,i+2,pos);
                 float w = wave_view->wave[int(c+(i*channels)*step)];
@@ -1144,6 +1323,8 @@ private:
                 cairo_line_to(cri, i+2,(float)(pos)+ (w * lstep));
             }
             pos += half_height_t;
+            cairo_pattern_destroy (pat);
+            pat = nullptr;
         }
         cairo_stroke(cri);
         cairo_destroy(cri);
@@ -1205,9 +1386,9 @@ private:
 
     }
 
-    void drawWheel(cairo_t* const cr, float di, int x, int y, int radius, float w) {
-        cairo_set_line_width(cr,10);
-        cairo_set_line_cap (cr, CAIRO_LINE_CAP_ROUND);
+    static void drawWheel(Widget_t *w, float di, int x, int y, int radius, float s) {
+        cairo_set_line_width(w->crb,10 / w->scale.ascale);
+        cairo_set_line_cap (w->crb, CAIRO_LINE_CAP_ROUND);
         int i;
         const int d = 1;
         for (i=375; i<455; i++) {
@@ -1216,14 +1397,14 @@ private:
             double ry = radius * cos(angle);
             double length_x = x - rx;
             double length_y = y + ry;
-            double radius_x = x - rx * w ;
-            double radius_y = y + ry * w ;
-            double z = radius_y/100.0;
+            double radius_x = x - rx * s ;
+            double radius_y = y + ry * s ;
+            double z = i/420.0;
             if ((int)di < d) {
-                cairo_set_source_rgba(cr, 0.16/z, 0.16/z, 0.16/z, 0.3);
-                cairo_move_to(cr, radius_x, radius_y);
-                cairo_line_to(cr,length_x,length_y);
-                cairo_stroke_preserve(cr);
+                cairo_set_source_rgba(w->crb, 0.66*z, 0.66*z, 0.66*z, 0.3);
+                cairo_move_to(w->crb, radius_x, radius_y);
+                cairo_line_to(w->crb,length_x,length_y);
+                cairo_stroke_preserve(w->crb);
             }
             di++;
             if (di>8.0) di = 0.0;
@@ -1243,7 +1424,7 @@ private:
         collectCents -= sCent;
         if (collectCents>8.0) collectCents = 0.0;
         else if (collectCents<0.0) collectCents = 8.0;
-        self->drawWheel (w->crb, collectCents,width*0.5, height*0.5, height*0.3, 0.98);
+        self->drawWheel (w, collectCents,width*0.5, height*0.5, height*0.3, 0.98);
         cairo_stroke(w->crb);
     }
 

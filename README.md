@@ -21,15 +21,17 @@ The GUI is created with libxputty.
 - move play-head to mouse position in wave view
 - set loop points for start/end loop
 - save loop points in play list
+- save selected loop as wav file
 - play backwards
 - volume control
 - endless looping
-- break playback
-- reset play-head to start position
+- break playback (keyboard support space bar)
+- reset play-head to start position (keyboard support courser left)
 
 ## Dependencies
 
 - libsndfile1-dev
+- portaudio19-dev
 - libcairo2-dev
 - libx11-dev
 

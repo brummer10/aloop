@@ -36,7 +36,6 @@ jack_port_t *out_port1;
 jack_port_t *default_out_port;
 jack_port_t *default_out_port1;
 
-float fRec0[2] = {0};
 
 void
 jack_shutdown (void *arg)
@@ -81,6 +80,9 @@ jack_process(jack_nframes_t nframes, void *arg)
 {
     float *out = static_cast<float *>(jack_port_get_buffer (out_port, nframes));
     float *out1 = static_cast<float *>(jack_port_get_buffer (out_port1, nframes));
+    static float fRec0[2] = {0};
+    static float ramp = 0.0;
+    static const float ramp_step = 256.0;
 
     if (( ui.samplesize && ui.samples != nullptr) && ui.play && ui.ready) {
         float fSlow0 = 0.0010000000000000009 * ui.gain;
@@ -94,12 +96,32 @@ jack_process(jack_nframes_t nframes, void *arg)
             }
             fRec0[1] = fRec0[0];
             ui.playBackwards ? ui.position-- : ui.position++;
-            if (ui.position > ui.samplesize) {
-                ui.position = 0;
+            if (ui.position > ui.loopPoint_r) {
+                ui.position = ui.loopPoint_l;
                 if (ui.pl.getProcess()) ui.pl.runProcess();
-            } else if (ui.position <= 0) {
-                ui.position = ui.samplesize;
+            } else if (ui.position <= ui.loopPoint_l) {
+                ui.position = ui.loopPoint_r;
                 if (ui.pl.getProcess()) ui.pl.runProcess();
+            // ramp up on loop start point
+            } else if (ui.playBackwards ?
+                        ui.position > ui.loopPoint_r - ramp_step :
+                        ui.position < ui.loopPoint_l + ramp_step) {
+                if (ramp < ramp_step) {
+                    ++ramp;
+                }
+                const float fade = max(0.0,ramp) /ramp_step ;
+                out[i] *= fade;
+                out1[i] *= fade;
+            // ramp down on loop end point
+            } else if (ui.playBackwards ?
+                        ui.position < ui.loopPoint_l + ramp_step :
+                        ui.position > ui.loopPoint_r - ramp_step) {
+                if (ramp > 0.0) {
+                    --ramp; 
+                }
+                const float fade = max(0.0,ramp) /ramp_step ;
+                out[i] *= fade;
+                out1[i] *= fade;
             }
         }
     } else {
