@@ -1078,6 +1078,7 @@ private:
         }
         adj_set_state(w->adj, st);
         self->loopPoint_l = lp;
+        if (!self->PlayList.size()) return;
         if (w->flags & HAS_POINTER && !self->blockWriteToPlayList) {
             std::get<2>(*(self->PlayList.begin()+self->playNow)) = self->loopPoint_l;
         }
@@ -1102,6 +1103,7 @@ private:
                 }
                 adj_set_state(w->adj, st);
                 self->loopPoint_l = lp;
+                if (!self->PlayList.size()) return;
                 std::get<2>(*(self->PlayList.begin()+self->playNow)) = self->loopPoint_l;
             }
         }
@@ -1120,6 +1122,7 @@ private:
         }
         adj_set_state(w->adj, st);
         self->loopPoint_r = lp;
+        if (!self->PlayList.size()) return;
         if (w->flags & HAS_POINTER && !self->blockWriteToPlayList) {
             std::get<3>(*(self->PlayList.begin()+self->playNow)) = self->loopPoint_r;
         }
@@ -1144,6 +1147,7 @@ private:
                 }
                 adj_set_state(w->adj, st);
                 self->loopPoint_r = lp;
+                if (!self->PlayList.size()) return;
                 std::get<3>(*(self->PlayList.begin()+self->playNow)) = self->loopPoint_r;
             }
         }
