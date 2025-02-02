@@ -146,9 +146,9 @@ int main(int argc, char *argv[]){
     #endif
         ui.dialog_response(ui.w, (void*) &argv[1]);
     }
- 
+
     main_run(&app);
-   
+
     ui.pl.stop();
     ui.pa.stop();
     main_quit(&app);

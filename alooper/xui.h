@@ -920,7 +920,7 @@ private:
             adj_set_state(loopMark_R->adj,1.0);
             loopPoint_r = samplesize;
             if (haveLoopPoints) {
-                if (std::get<3>(*lfile) == (uint32_t) INT_MAX)
+                if (std::get<3>(*lfile) > samplesize)
                     std::get<3>(*lfile) = samplesize;
             }
             
