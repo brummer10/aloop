@@ -211,7 +211,7 @@ public:
             self->read_soundfile(*(const char**)user_data);
             self->blockWriteToPlayList = false;
         } else {
-            fprintf(stderr, "no file selected\n");
+            std::cerr << "no file selected" <<std::endl;
         }
     }
 
@@ -380,6 +380,7 @@ private:
         playList = add_listbox(viewPlayList, "", 20, 20, 360, 270);
         playList->parent_struct = (void*)this;
         playList->scale.gravity = NORTHWEST;
+        playList->func.user_paste_callback = listbox_move_callback;
 
         loadPlayList = add_button(viewPlayList, "", 20, 300, 30, 30);
         loadPlayList->parent_struct = (void*)this;
@@ -469,6 +470,25 @@ private:
             if (laod) listbox_set_active_entry(playList, playNow);
             widget_show_all(playList);
         }
+    }
+
+    static void listbox_move_callback(void *w_, void* button_, void* user_data) {
+        Widget_t *w = (Widget_t*)w_;
+        AudioLooperUi *self = static_cast<AudioLooperUi*>(w->parent_struct);
+        if(user_data !=NULL ) {
+        XButtonEvent *xbutton = (XButtonEvent*)button_;
+            int x1, y1;
+            os_translate_coords(w, w->widget, 
+                self->w->widget, xbutton->x, xbutton->y, &x1, &y1);
+            int *v = static_cast<int*>(user_data);
+            if (x1 > 0 && y1 > 0 && x1 <self->w->width && y1 < self->w->height) {
+                self->playNow = *v > 0? *v-1 : self->PlayList.size()-1;
+                self->pre_load = false;
+                self->forceReload = true;
+                if (self->pl.getProcess()) self->pl.runProcess();
+            }
+        }
+        
     }
 
     // handle drag and drop for the Play List window
@@ -825,8 +845,10 @@ private:
         samplesize = 0;
         samplerate = 0;
         position = 0;
-        std::unique_lock<std::mutex> lk(WMutex);
-        SyncWait->wait(lk);
+        if (Pa_IsStreamActive(stream)) {
+            std::unique_lock<std::mutex> lk(WMutex);
+            SyncWait->wait_for(lk, std::chrono::milliseconds(60));
+        }
         ready = false;
         delete[] samples;
         samples = nullptr;
@@ -870,13 +892,14 @@ private:
                 is_loaded = false;
             }
         } else {
-            fprintf(stderr, "load pre loaded %s\n", file);
             channels = 0;
             samplesize = 0;
             samplerate = 0;
             position = 0;
-            std::unique_lock<std::mutex> lk(WMutex);
-            SyncWait->wait(lk);
+            if (Pa_IsStreamActive(stream)) {
+                std::unique_lock<std::mutex> lk(WMutex);
+                SyncWait->wait_for(lk, std::chrono::milliseconds(60));
+            }
             delete[] samples;
             samples = nullptr;
             samples = pre_samples;
@@ -897,7 +920,6 @@ private:
             adj_set_state(loopMark_R->adj,1.0);
             loopPoint_r = samplesize;
             if (haveLoopPoints) {
-               // fprintf(stderr, "loopPoint_l = %u, loopPoint_r= %u\n",std::get<2>(*lfile), std::get<3>(*lfile));
                 if (std::get<3>(*lfile) == (uint32_t) INT_MAX)
                     std::get<3>(*lfile) = samplesize;
             }
@@ -963,13 +985,20 @@ private:
     static void dummy_callback(void *w_, void* user_data) {}
 
     void updateUI() {
+        static int waitOne = 0;
         #if defined(__linux__) || defined(__FreeBSD__) || \
             defined(__NetBSD__) || defined(__OpenBSD__)
         XLockDisplay(w->app->dpy);
         wview->func.adj_callback = dummy_callback;
         #endif
-        adj_set_value(wview->adj, (float) position);
-        if (!ready) transparent_draw(wview, nullptr);
+        if (ready) adj_set_value(wview->adj, (float) position);
+        else {
+            waitOne++;
+            if (waitOne > 2) {
+                transparent_draw(wview, nullptr);
+                waitOne = 0;
+            }
+        }
         #if defined(__linux__) || defined(__FreeBSD__) || \
             defined(__NetBSD__) || defined(__OpenBSD__)
         expose_widget(wview);
