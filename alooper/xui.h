@@ -339,6 +339,8 @@ private:
     Widget_t *loadPlayList;
     Widget_t *savePlayList;
     Widget_t *LoadMenu;
+    Widget_t *SaveMenu;
+    Widget_t *SaveItem;
     Widget_t *saveLoop;
     std::condition_variable *SyncWait;
     std::mutex WMutex;
@@ -358,6 +360,20 @@ private:
     uint32_t pre_samplerate;
     bool pre_load;
     bool is_loaded;
+    std::string currentPlayList;
+    std::string newLabel;
+
+    // move a vector entry to a new index
+    template <typename t> 
+    void move(std::vector<t>& v, size_t oldIndex, size_t newIndex) {
+        if (oldIndex > newIndex) {
+            std::rotate(v.rend() - oldIndex - 1, v.rend()
+                    - oldIndex, v.rend() - newIndex);
+        } else {
+            std::rotate(v.begin() + oldIndex, v.begin() +
+                    oldIndex + 1, v.begin() + newIndex + 1);
+        }
+    }
 
 /****************************************************************
             PlayList - create the window
@@ -392,7 +408,7 @@ private:
         savePlayList->parent_struct = (void*)this;
         widget_get_png(savePlayList, LDVAR(save__png));
         savePlayList->scale.gravity = SOUTHEAST;
-        savePlayList->func.value_changed_callback = save_as_callback;
+        savePlayList->func.value_changed_callback = save_callback;
 
         upEntry = add_button(viewPlayList, "", 320, 300, 30, 30);
         upEntry->parent_struct = (void*)this;
@@ -415,6 +431,12 @@ private:
         LoadMenu = create_menu(loadPlayList,25);
         LoadMenu->parent_struct = (void*)this;
         LoadMenu->func.button_release_callback = load_playlist_callback;
+
+        SaveMenu = create_menu(savePlayList,25);
+        SaveMenu->parent_struct = (void*)this;
+        SaveItem = menu_add_item(SaveMenu, "Save ");
+        menu_add_item(SaveMenu, "Save as");
+        SaveMenu->func.button_release_callback = save_playlist_callback;
     }
 
 /****************************************************************
@@ -472,20 +494,44 @@ private:
         }
     }
 
+    void removeFromPlayList(int v) {
+        if (!PlayList.size()) return;
+        PlayList.erase(PlayList.begin() + v);
+        rebuildPlayList();
+        forceReload = true;
+        pre_load = false;
+    }
+
+    void moveInPlayList(int from, int to) {
+        if (!PlayList.size()) return;
+        move(PlayList, from, to);
+        rebuildPlayList();
+        forceReload = true;
+        pre_load = false;
+    }
+
     static void listbox_move_callback(void *w_, void* button_, void* user_data) {
         Widget_t *w = (Widget_t*)w_;
         AudioLooperUi *self = static_cast<AudioLooperUi*>(w->parent_struct);
         if(user_data !=NULL ) {
         XButtonEvent *xbutton = (XButtonEvent*)button_;
             int x1, y1;
-            os_translate_coords(w, w->widget, 
-                self->w->widget, xbutton->x, xbutton->y, &x1, &y1);
+            os_translate_coords(w, os_get_root_window(w->app, IS_WINDOW), 
+                self->w->widget, xbutton->x_root, xbutton->y_root, &x1, &y1);
+            int x2, y2;
+            os_translate_coords(w, os_get_root_window(w->app, IS_WINDOW), 
+                w->widget, xbutton->x_root, xbutton->y_root, &x2, &y2);
             int *v = static_cast<int*>(user_data);
-            if (x1 > 0 && y1 > 0 && x1 <self->w->width && y1 < self->w->height) {
+            if (x1 > 0 && y1 > 0 && x1 < self->w->width && y1 < self->w->height) {
                 self->playNow = *v > 0? *v-1 : self->PlayList.size()-1;
                 self->pre_load = false;
                 self->forceReload = true;
                 if (self->pl.getProcess()) self->pl.runProcess();
+            } else if (x2 > 0 && y2 > 0 && x2 < w->width && y2 < w->height) {
+                int to = max(0, min(static_cast<int>(self->PlayList.size() -1), (max(1, y2)/25)));
+                if (*v != to) self->moveInPlayList(*v, to);
+            } else {
+                self->removeFromPlayList(*v);
             }
         }
         
@@ -533,10 +579,7 @@ private:
         if ((w->flags & HAS_POINTER) && adj_get_value(w->adj)){
             if (!self->PlayList.size()) return;
             int remove = static_cast<int>(adj_get_value(self->playList->adj));
-            self->PlayList.erase(self->PlayList.begin() + remove);
-            self->rebuildPlayList();
-            self->forceReload = true;
-            self->pre_load = false;
+            self->removeFromPlayList(remove);
         }
     }
 
@@ -576,6 +619,7 @@ private:
         self->PlayList.clear();
         self->load_PlayList(self->PlayListNames[v].c_str());
         self->rebuildPlayList();
+        self->currentPlayList = self->PlayListNames[v];
         if (!self->PlayList.size()) return;
         if (!self->samples) {
             self->ready = false;
@@ -617,8 +661,8 @@ private:
         if(user_data !=NULL && strlen(*(const char**)user_data)) {
             AudioLooperUi *self = static_cast<AudioLooperUi*>(w->parent_struct);
             std::string lname(*(const char**)user_data);
-            if (std::find(self->PlayListNames.begin(), self->PlayListNames.end(), lname) 
-                                                            != self->PlayListNames.end()) {
+            if (std::find(self->PlayListNames.begin(),
+                    self->PlayListNames.end(), lname) != self->PlayListNames.end()) {
                 self->remove_PlayList(lname);
                 self->save_PlayList(lname, true);
            } else {
@@ -628,21 +672,54 @@ private:
     }
 
     // pop up a text entry to enter a name for a Play List to save
+    void save_as() {
+        if (!PlayList.size()) return;
+        Widget_t* dia = showTextEntry(viewPlayList, 
+                    "Playlist - save as:", "Save Play List as:");
+        int x1, y1;
+        os_translate_coords( viewPlayList, viewPlayList->widget, 
+            os_get_root_window(w->app, IS_WIDGET), 0, 0, &x1, &y1);
+        os_move_window(w->app->dpy,dia,x1+60, y1+16);
+        viewPlayList->func.dialog_callback = save_response;
+    }
+
+    // save button callback
     static void save_as_callback(void *w_, void* user_data) {
         Widget_t *w = (Widget_t*)w_;
         AudioLooperUi *self = static_cast<AudioLooperUi*>(w->parent_struct);
         if ((w->flags & HAS_POINTER) && !adj_get_value(w->adj)){
             if (!self->PlayList.size()) return;
-            Widget_t* dia = self->showTextEntry(self->viewPlayList, 
-                        "Playlist - save as:", "Save Play List as:");
-            int x1, y1;
-            os_translate_coords( self->viewPlayList, self->viewPlayList->widget, 
-                os_get_root_window(self->w->app, IS_WIDGET), 0, 0, &x1, &y1);
-            os_move_window(self->w->app->dpy,dia,x1+60, y1+16);
-            self->viewPlayList->func.dialog_callback = save_response;
+            self->save_as();
         }
     }
 
+    // save menu callback
+    static void save_playlist_callback(void* w_, void* item_, void* data_) {
+        Widget_t *w = (Widget_t*)w_;
+        AudioLooperUi *self = static_cast<AudioLooperUi*>(w->parent_struct);
+        int v = *(int*)item_;
+        if (v == 0) {
+            const char* f = self->currentPlayList.c_str();
+            save_response(w, &f);
+        }
+        else if (v == 1) self->save_as();
+    }
+
+    // save button callback, check if we need to popup menu or textentry
+    static void save_callback(void *w_, void* user_data) {
+        Widget_t *w = (Widget_t*)w_;
+        AudioLooperUi *self = static_cast<AudioLooperUi*>(w->parent_struct);
+        if ((w->flags & HAS_POINTER) && !adj_get_value(w->adj)){
+            if (!self->PlayList.size()) return;
+            if (!self->currentPlayList.empty()) {
+                self->newLabel = "Save as " + self->currentPlayList;
+                self->SaveItem->label = self->newLabel.c_str();
+                pop_menu_show(w, self->SaveMenu, 2, true);
+            } else {
+                save_as_callback(w, nullptr);
+            }
+        }
+    }
 
 /****************************************************************
                 Read/Save/Load a Play List

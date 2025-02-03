@@ -221,6 +221,7 @@ main (int argc, char *argv[])
 
     main_run(&app);
    
+    ui.pl.stop();
     ui.pa.stop();
     main_quit(&app);
 
