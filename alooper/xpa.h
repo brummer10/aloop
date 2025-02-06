@@ -68,6 +68,8 @@ public:
                 if (std::strcmp(info->name, "system") ==0) dev.order = 1; // jackd
                 dev.index = i;
                 dev.SampleRate = SampleRate = info->defaultSampleRate;
+                dev.Name = info->name;
+                dev.hostName = getHostName(info->hostApi);
                 devices.push_back(dev);
             }
             
@@ -88,11 +90,13 @@ public:
         outputParameters.device = it->index;
         outputParameters.channelCount = ochannels;
         outputParameters.sampleFormat = paFloat32;
+        outputParameters.suggestedLatency = 0.050;
         outputParameters.hostApiSpecificStreamInfo = nullptr;
-
+        bool isAlsa = it->hostName.compare("ALSA") == 0 ;
+        int frames = isAlsa ? 1024 : paFramesPerBufferUnspecified;
         err = Pa_OpenStream(&stream, ichannels ? &inputParameters : nullptr, 
                             ochannels ? &outputParameters : nullptr, it->SampleRate,
-                            paFramesPerBufferUnspecified, paClipOff, process, arg);
+                            frames, paClipOff, process, arg);
 
         devices.clear();
         #else
@@ -115,6 +119,10 @@ public:
                             ochannels ? &outputParameters : nullptr, SampleRate,
                             paFramesPerBufferUnspecified, paClipOff, process, arg);
         #endif
+
+        if (isAlsa) std::cout << "using (" << it->Name << ") " << it->hostName 
+            << " with " << frames << " frames per buffer and " << it->SampleRate 
+            << "hz Sample Rate" << std::endl;
 
         return err == paNoError ? true : false;
     }
@@ -157,8 +165,19 @@ private:
     struct Devices {
         int order;
         int index;
+        std::string Name;
+        std::string hostName;
         uint32_t SampleRate;
     };
+
+    std::string getHostName(unsigned int index){
+        const PaHostApiInfo* info;
+        uint32_t apicount =  Pa_GetHostApiCount();
+        if(apicount <= 0) return "";
+        if(index > apicount-1) return "";
+        info =  Pa_GetHostApiInfo(index);
+        return info->name;
+    }
 
     // initialise the portaudio server,
     // catch the falling device probe messages  
