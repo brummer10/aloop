@@ -61,23 +61,23 @@ private:
 
         // Get the number of supported simple formats
         int simpleFormatCount;
-        sf_command(SF_NULL, SFC_GET_SIMPLE_FORMAT_COUNT, &simpleFormatCount, sizeof(int));
+        sf_command(nullptr, SFC_GET_SIMPLE_FORMAT_COUNT, &simpleFormatCount, sizeof(int));
 
         // Get the number of supported major formats
         int majorFormatCount;
-        sf_command(SF_NULL, SFC_GET_FORMAT_MAJOR_COUNT, &majorFormatCount, sizeof(int));
+        sf_command(nullptr, SFC_GET_FORMAT_MAJOR_COUNT, &majorFormatCount, sizeof(int));
 
         // Get the number of supported sub formats
         int subFormatCount;
-        sf_command(SF_NULL, SFC_GET_FORMAT_SUBTYPE_COUNT, &subFormatCount, sizeof(int));
+        sf_command(nullptr, SFC_GET_FORMAT_SUBTYPE_COUNT, &subFormatCount, sizeof(int));
 
         // Get information about each simple format
         for (int i = 0; i < simpleFormatCount; ++i) {
             SF_FORMAT_INFO formatInfo;
             formatInfo.format = i;
-            sf_command(SF_NULL, SFC_GET_SIMPLE_FORMAT, &formatInfo, sizeof(formatInfo));
+            sf_command(nullptr, SFC_GET_SIMPLE_FORMAT, &formatInfo, sizeof(formatInfo));
 
-            if (formatInfo.extension != SF_NULL)
+            if (formatInfo.extension != nullptr)
                 extensions.insert(formatInfo.extension);
         }
 
@@ -85,9 +85,9 @@ private:
         for (int i = 0; i < majorFormatCount; i++) {
             SF_FORMAT_INFO formatInfo;
             formatInfo.format = i;
-            sf_command(SF_NULL, SFC_GET_FORMAT_MAJOR, &formatInfo, sizeof(formatInfo));
+            sf_command(nullptr, SFC_GET_FORMAT_MAJOR, &formatInfo, sizeof(formatInfo));
 
-            if (formatInfo.extension != SF_NULL)
+            if (formatInfo.extension != nullptr)
                 extensions.insert(formatInfo.extension);
         }
 
@@ -95,9 +95,9 @@ private:
         for (int j = 0; j < subFormatCount; j++) {
             SF_FORMAT_INFO formatInfo;
             formatInfo.format = j;
-            sf_command(SF_NULL, SFC_GET_FORMAT_SUBTYPE, &formatInfo, sizeof(SF_FORMAT_INFO));
+            sf_command(nullptr, SFC_GET_FORMAT_SUBTYPE, &formatInfo, sizeof(SF_FORMAT_INFO));
 
-            if (formatInfo.extension != SF_NULL)
+            if (formatInfo.extension != nullptr)
                 extensions.insert(formatInfo.extension);
         }
 

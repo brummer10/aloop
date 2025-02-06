@@ -91,8 +91,10 @@ private:
        // assert(inp_count == 0);
        // assert(out_count <= 1);
         *olen = nout - out_count;
+        #ifndef NDEBUG
         if (inp_count)
             printf("resampled from %i to: %i, lost %i samples\n",fs_inp, fs_outp, inp_count);
+        #endif
         return p;
     }
 };
