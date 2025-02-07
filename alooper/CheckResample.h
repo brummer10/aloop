@@ -95,6 +95,8 @@ private:
         if (inp_count)
             printf("resampled from %i to: %i, lost %i samples\n",fs_inp, fs_outp, inp_count);
         #endif
+        delete[] input;
+        input = nullptr;
         return p;
     }
 };

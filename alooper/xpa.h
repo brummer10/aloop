@@ -90,10 +90,11 @@ public:
         outputParameters.device = it->index;
         outputParameters.channelCount = ochannels;
         outputParameters.sampleFormat = paFloat32;
-        outputParameters.suggestedLatency = 0.050;
         outputParameters.hostApiSpecificStreamInfo = nullptr;
+
         bool isAlsa = it->hostName.compare("ALSA") == 0 ;
         int frames = isAlsa ? 1024 : paFramesPerBufferUnspecified;
+
         err = Pa_OpenStream(&stream, ichannels ? &inputParameters : nullptr, 
                             ochannels ? &outputParameters : nullptr, it->SampleRate,
                             frames, paClipOff, process, arg);
@@ -176,7 +177,7 @@ private:
         if(apicount <= 0) return "";
         if(index > apicount-1) return "";
         info =  Pa_GetHostApiInfo(index);
-        return info->name;
+        return std::string(info->name);
     }
 
     // initialise the portaudio server,
