@@ -69,7 +69,7 @@ public:
                 dev.index = i;
                 dev.SampleRate = SampleRate = info->defaultSampleRate;
                 dev.Name = info->name;
-                dev.hostName = getHostName(info->hostApi);
+                snprintf(dev.hostName, 63, getHostName(info->hostApi));
                 devices.push_back(dev);
             }
             
@@ -92,7 +92,7 @@ public:
         outputParameters.sampleFormat = paFloat32;
         outputParameters.hostApiSpecificStreamInfo = nullptr;
 
-        bool isAlsa = it->hostName.compare("ALSA") == 0 ;
+        bool isAlsa = strcmp(it->hostName, "ALSA") == 0 ;
         int frames = isAlsa ? 1024 : paFramesPerBufferUnspecified;
 
         err = Pa_OpenStream(&stream, ichannels ? &inputParameters : nullptr, 
@@ -167,17 +167,17 @@ private:
         int order;
         int index;
         std::string Name;
-        std::string hostName;
+        char hostName[64];
         uint32_t SampleRate;
     };
 
-    std::string getHostName(unsigned int index){
+    const char* getHostName(unsigned int index){
         const PaHostApiInfo* info;
         uint32_t apicount =  Pa_GetHostApiCount();
         if(apicount <= 0) return "";
         if(index > apicount-1) return "";
         info =  Pa_GetHostApiInfo(index);
-        return std::string(info->name);
+        return info->name;
     }
 
     // initialise the portaudio server,

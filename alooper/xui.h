@@ -208,7 +208,9 @@ public:
             self->pre_load = false;
             self->blockWriteToPlayList = true;
             self->addToPlayList(*(char**)user_data, true);
-            self->read_soundfile(*(const char**)user_data);
+            self->forceReload = true;
+            self->playNow = self->PlayList.size()-2;
+            if (self->pl.getProcess()) self->pl.runProcess();
             self->blockWriteToPlayList = false;
         } else {
             std::cerr << "no file selected" <<std::endl;
@@ -444,7 +446,8 @@ private:
 ****************************************************************/
 
     // load next file from Play List, called from background thread,
-    // triggered by audio server when end of current file is reached
+    // triggered by audio server when end of current file is reached,
+    // or triggered from dnd btw. load file event
     void loadFromPlayList() {
         if (((PlayList.size() < 2) || !usePlayList) && !forceReload) return;
         playNow++;
@@ -549,9 +552,10 @@ private:
             while (dndfile != NULL) {
                 if (self->supportedFormats.isSupported(dndfile) ) {
                     self->pre_load = false;
-                    if (!self->PlayList.size()) self->read_soundfile(dndfile);
                     self->addToPlayList(dndfile, false);
                     self->forceReload = true;
+                    if (self->PlayList.size()<2)
+                        if (self->pl.getProcess()) self->pl.runProcess();
                 } else {
                     std::cerr << "Unrecognized file extension: " << dndfile << std::endl;
                 }
