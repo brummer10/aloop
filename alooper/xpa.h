@@ -99,6 +99,10 @@ public:
                             ochannels ? &outputParameters : nullptr, it->SampleRate,
                             frames, paClipOff, process, arg);
 
+        if (isAlsa) std::cout << "using (" << it->Name << ") " << it->hostName 
+            << " with " << frames << " frames per buffer and " << it->SampleRate 
+            << "hz Sample Rate" << std::endl;
+
         devices.clear();
         #else
         PaStreamParameters inputParameters;
@@ -120,10 +124,6 @@ public:
                             ochannels ? &outputParameters : nullptr, SampleRate,
                             paFramesPerBufferUnspecified, paClipOff, process, arg);
         #endif
-
-        if (isAlsa) std::cout << "using (" << it->Name << ") " << it->hostName 
-            << " with " << frames << " frames per buffer and " << it->SampleRate 
-            << "hz Sample Rate" << std::endl;
 
         return err == paNoError ? true : false;
     }

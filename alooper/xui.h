@@ -7,6 +7,7 @@
  * Copyright (C) 2024 brummer <brummer@web.de>
  */
 
+
 #ifndef JACKAPI
 #include <portaudio.h>
 #endif
@@ -23,8 +24,8 @@
 #include <fstream>
 #include <limits>
 
-#include "CheckResample.h"
-
+#include "PlayList.h"
+#include "AudioFile.h"
 #include "xwidgets.h"
 #include "xfile-dialog.h"
 #include "TextEntry.h"
@@ -105,17 +106,14 @@ private:
     }
 };
 
-class AudioLooperUi: CheckResample, public TextEntry
+class AudioLooperUi: public TextEntry
 {
 public:
     Widget_t *w;
     ParallelThread pa;
     ParallelThread pl;
+    AudioFile af;
 
-    float *samples;
-    uint32_t channels;
-    uint32_t samplesize;
-    uint32_t samplerate;
     uint32_t jack_sr;
     uint32_t position;
     uint32_t loopPoint_l;
@@ -126,21 +124,13 @@ public:
     bool ready;
     bool playBackwards;
 
-    AudioLooperUi() {
-        channels = 0;
-        samplesize = 0;
-        samplerate = 0;
-        pre_channels = 0;
-        pre_samplesize = 0;
-        pre_samplerate = 0;
+    AudioLooperUi() : af(), pre_af(), plist("alooper") {
         jack_sr = 0;
         position = 0;
         loopPoint_l = 0;
         loopPoint_r = 1000;
         playNow = 0;
         gain = std::pow(1e+01, 0.05 * 0.0);
-        samples = nullptr;
-        pre_samples = nullptr;
         pre_load = false;
         is_loaded = false;
         loadNew = false;
@@ -152,29 +142,12 @@ public:
         blockWriteToPlayList = false;
         viewPlayList = nullptr;
         stream = nullptr;
-        if (getenv("XDG_CONFIG_HOME")) {
-            std::string path = getenv("XDG_CONFIG_HOME");
-            config_file = path + "/alooper-" + ALVER + ".conf";
-        } else {
-        #if defined(__linux__) || defined(__FreeBSD__) || \
-            defined(__NetBSD__) || defined(__OpenBSD__)
-            std::string path = getenv("HOME");
-            config_file = path +"/.config/alooper-" + ALVER + ".conf";
-        #else
-            std::string path = getenv("APPDATA");
-            config_file = path +"/.config/alooper-" + ALVER + ".conf";
-        #endif
-        }
-        readPlayList();
+        plist.readPlayList();
     };
 
     ~AudioLooperUi() {
-        delete[] samples;
-        delete[] pre_samples;
         pl.stop();
         pa.stop();
-        PlayList.clear();
-        PlayListNames.clear();
     };
 
 /****************************************************************
@@ -209,7 +182,7 @@ public:
             self->blockWriteToPlayList = true;
             self->addToPlayList(*(char**)user_data, true);
             self->forceReload = true;
-            self->playNow = self->PlayList.size()-2;
+            self->playNow = self->plist.Play_list.size()-2;
             if (self->pl.getProcess()) self->pl.runProcess();
             self->blockWriteToPlayList = false;
         } else {
@@ -348,22 +321,16 @@ private:
     std::mutex WMutex;
     SupportedFormats supportedFormats;
     PaStream* stream;
-    std::vector<std::tuple< std::string, std::string, uint32_t, uint32_t> > PlayList;
-    std::vector<std::tuple< std::string, std::string, uint32_t, uint32_t> >::iterator lfile;
-    std::vector<std::string> PlayListNames;
     uint32_t playNow;
     bool usePlayList;
     bool forceReload;
     bool blockWriteToPlayList;
-    std::string config_file;
-    float *pre_samples;
-    uint32_t pre_channels;
-    uint32_t pre_samplesize;
-    uint32_t pre_samplerate;
     bool pre_load;
     bool is_loaded;
     std::string currentPlayList;
     std::string newLabel;
+    AudioFile pre_af;
+    PlayList plist;
 
     // move a vector entry to a new index
     template <typename t> 
@@ -449,15 +416,15 @@ private:
     // triggered by audio server when end of current file is reached,
     // or triggered from dnd btw. load file event
     void loadFromPlayList() {
-        if (((PlayList.size() < 2) || !usePlayList) && !forceReload) return;
+        if (((plist.Play_list.size() < 2) || !usePlayList) && !forceReload) return;
         playNow++;
-        lfile = PlayList.begin()+playNow;
-        if (lfile >= PlayList.end()) {
-            lfile = PlayList.begin();
+        plist.lfile = plist.Play_list.begin()+playNow;
+        if (plist.lfile >= plist.Play_list.end()) {
+            plist.lfile = plist.Play_list.begin();
             playNow = 0;
         }
         if (!pre_load)
-            preload_soundfile(std::get<1>(*lfile).c_str(), true);
+            preload_soundfile(std::get<1>(*plist.lfile).c_str(), true);
         #if defined(__linux__) || defined(__FreeBSD__) || \
             defined(__NetBSD__) || defined(__OpenBSD__)
         XLockDisplay(w->app->dpy);
@@ -466,29 +433,29 @@ private:
         blockWriteToPlayList = true;
         listbox_set_active_entry(playList, playNow);
         
-        read_soundfile(std::get<1>(*lfile).c_str(), true);
+        read_soundfile(std::get<1>(*plist.lfile).c_str(), true);
         blockWriteToPlayList = false;
         #if defined(__linux__) || defined(__FreeBSD__) || \
             defined(__NetBSD__) || defined(__OpenBSD__)
         XFlush(w->app->dpy);
         XUnlockDisplay(w->app->dpy);
         #endif
-        auto it = lfile + 1;
-        if (it >= PlayList.end()) {
-            it = PlayList.begin();
+        auto it = plist.lfile + 1;
+        if (it >= plist.Play_list.end()) {
+            it = plist.Play_list.begin();
         }
         preload_soundfile(std::get<1>(*it).c_str(), false);
     }
 
     // add a file to the Play List
     void addToPlayList(void* fileName, bool laod) {
-        PlayList.push_back(std::tuple<std::string, std::string, uint32_t, uint32_t>(
+        plist.Play_list.push_back(std::tuple<std::string, std::string, uint32_t, uint32_t>(
             std::string(basename((char*)fileName)), std::string((const char*)fileName),
             0, (uint32_t)INT_MAX));
         if (!viewPlayList) createPlayListView(w->app);
-        auto it = PlayList.end()-1;
+        auto it = plist.Play_list.end()-1;
         listbox_add_entry(playList, std::get<0>(*it).c_str());
-        if (laod) playNow = PlayList.size()-1;
+        if (laod) playNow = plist.Play_list.size()-1;
         Metrics_t metrics;
         os_get_window_metrics(playList, &metrics);
         if (metrics.visible) {
@@ -498,16 +465,16 @@ private:
     }
 
     void removeFromPlayList(int v) {
-        if (!PlayList.size()) return;
-        PlayList.erase(PlayList.begin() + v);
+        if (!plist.Play_list.size()) return;
+        plist.Play_list.erase(plist.Play_list.begin() + v);
         rebuildPlayList();
         forceReload = true;
         pre_load = false;
     }
 
     void moveInPlayList(int from, int to) {
-        if (!PlayList.size()) return;
-        move(PlayList, from, to);
+        if (!plist.Play_list.size()) return;
+        move(plist.Play_list, from, to);
         rebuildPlayList();
         forceReload = true;
         pre_load = false;
@@ -526,12 +493,12 @@ private:
                 w->widget, xbutton->x_root, xbutton->y_root, &x2, &y2);
             int *v = static_cast<int*>(user_data);
             if (x1 > 0 && y1 > 0 && x1 < self->w->width && y1 < self->w->height) {
-                self->playNow = *v > 0? *v-1 : self->PlayList.size()-1;
+                self->playNow = *v > 0? *v-1 : self->plist.Play_list.size()-1;
                 self->pre_load = false;
                 self->forceReload = true;
                 if (self->pl.getProcess()) self->pl.runProcess();
             } else if (x2 > 0 && y2 > 0 && x2 < w->width && y2 < w->height) {
-                int to = max(0, min(static_cast<int>(self->PlayList.size() -1), (max(1, y2)/25)));
+                int to = max(0, min(static_cast<int>(self->plist.Play_list.size() -1), (max(1, y2)/25)));
                 if (*v != to) self->moveInPlayList(*v, to);
             } else {
                 self->removeFromPlayList(*v);
@@ -554,7 +521,7 @@ private:
                     self->pre_load = false;
                     self->addToPlayList(dndfile, false);
                     self->forceReload = true;
-                    if (self->PlayList.size()<2)
+                    if (self->plist.Play_list.size()<2)
                         if (self->pl.getProcess()) self->pl.runProcess();
                 } else {
                     std::cerr << "Unrecognized file extension: " << dndfile << std::endl;
@@ -568,7 +535,7 @@ private:
     // re-build the Play List when files was re-moved
     void rebuildPlayList() {
         listbox_remove_entrys(playList);
-        for (auto it = PlayList.begin(); it != PlayList.end(); it++)
+        for (auto it = plist.Play_list.begin(); it != plist.Play_list.end(); it++)
             listbox_add_entry(playList, std::get<0>(*it).c_str());
         listbox_set_active_entry(playList, playNow);
         Metrics_t metrics;
@@ -581,7 +548,7 @@ private:
         Widget_t *w = (Widget_t*)w_;
         AudioLooperUi *self = static_cast<AudioLooperUi*>(w->parent_struct);
         if ((w->flags & HAS_POINTER) && adj_get_value(w->adj)){
-            if (!self->PlayList.size()) return;
+            if (!self->plist.Play_list.size()) return;
             int remove = static_cast<int>(adj_get_value(self->playList->adj));
             self->removeFromPlayList(remove);
         }
@@ -592,10 +559,10 @@ private:
         Widget_t *w = (Widget_t*)w_;
         AudioLooperUi *self = static_cast<AudioLooperUi*>(w->parent_struct);
         if ((w->flags & HAS_POINTER) && adj_get_value(w->adj)){
-            if (!self->PlayList.size()) return;
+            if (!self->plist.Play_list.size()) return;
             int up = static_cast<int>(adj_get_value(self->playList->adj));
             if (!up) return;
-            std::swap(self->PlayList[up-1],self->PlayList[up]);
+            std::swap(self->plist.Play_list[up-1],self->plist.Play_list[up]);
             self->rebuildPlayList();
             self->pre_load = false;
         }
@@ -606,10 +573,10 @@ private:
         Widget_t *w = (Widget_t*)w_;
         AudioLooperUi *self = static_cast<AudioLooperUi*>(w->parent_struct);
         if ((w->flags & HAS_POINTER) && adj_get_value(w->adj)){
-            if (!self->PlayList.size()) return;
+            if (!self->plist.Play_list.size()) return;
             int down = static_cast<int>(adj_get_value(self->playList->adj));
-            if (down > static_cast<int>(self->PlayList.size()-1)) return;
-            std::swap(self->PlayList[down],self->PlayList[down+1]);
+            if (down > static_cast<int>(self->plist.Play_list.size()-1)) return;
+            std::swap(self->plist.Play_list[down],self->plist.Play_list[down+1]);
             self->rebuildPlayList();
             self->pre_load = false;
         }
@@ -620,21 +587,21 @@ private:
         Widget_t *w = (Widget_t*)w_;
         AudioLooperUi *self = static_cast<AudioLooperUi*>(w->parent_struct);
         int v = *(int*)item_;
-        self->PlayList.clear();
-        self->load_PlayList(self->PlayListNames[v].c_str());
+        self->plist.Play_list.clear();
+        self->plist.load_PlayList(self->plist.PlayListNames[v].c_str());
         self->rebuildPlayList();
-        self->currentPlayList = self->PlayListNames[v];
-        if (!self->PlayList.size()) return;
-        if (!self->samples) {
+        self->currentPlayList = self->plist.PlayListNames[v];
+        if (!self->plist.Play_list.size()) return;
+        if (!self->af.samples) {
             self->ready = false;
-            self->lfile = self->PlayList.begin();
-            self->playNow = self->PlayList.size();
+            self->plist.lfile = self->plist.Play_list.begin();
+            self->playNow = self->plist.Play_list.size();
             if (self->pl.getProcess()) self->pl.runProcess();
         } else {
-            self->playNow = self->PlayList.size()-1;
+            self->playNow = self->plist.Play_list.size()-1;
             self->pre_load = false;
-            delete[] self->pre_samples;
-            self->pre_samples = nullptr;
+            delete[] self->pre_af.samples;
+            self->pre_af.samples = nullptr;
         }
     }
 
@@ -643,8 +610,8 @@ private:
         Widget_t *w = (Widget_t*)w_;
         AudioLooperUi *self = static_cast<AudioLooperUi*>(w->parent_struct);
         if ((w->flags & HAS_POINTER) && !adj_get_value(w->adj)){
-            self->PlayListNames.clear();
-            self->readPlayList();
+            self->plist.PlayListNames.clear();
+            self->plist.readPlayList();
 
             Widget_t *view_port = self->LoadMenu->childlist->childs[0];
             int i = view_port->childlist->elem;
@@ -652,7 +619,7 @@ private:
                 menu_remove_item(self->LoadMenu,view_port->childlist->childs[i]);
             }
 
-            for (auto i = self->PlayListNames.begin(); i != self->PlayListNames.end(); i++) {
+            for (auto i = self->plist.PlayListNames.begin(); i != self->plist.PlayListNames.end(); i++) {
                 menu_add_item(self->LoadMenu, (*i).c_str());
             }
             pop_menu_show(w, self->LoadMenu, 6, true);
@@ -665,19 +632,19 @@ private:
         if(user_data !=NULL && strlen(*(const char**)user_data)) {
             AudioLooperUi *self = static_cast<AudioLooperUi*>(w->parent_struct);
             std::string lname(*(const char**)user_data);
-            if (std::find(self->PlayListNames.begin(),
-                    self->PlayListNames.end(), lname) != self->PlayListNames.end()) {
-                self->remove_PlayList(lname);
-                self->save_PlayList(lname, true);
+            if (std::find(self->plist.PlayListNames.begin(),
+                    self->plist.PlayListNames.end(), lname) != self->plist.PlayListNames.end()) {
+                self->plist.remove_PlayList(lname);
+                self->plist.save_PlayList(lname, true);
            } else {
-                self->save_PlayList(lname, true);
+                self->plist.save_PlayList(lname, true);
             }
         }
     }
 
     // pop up a text entry to enter a name for a Play List to save
     void save_as() {
-        if (!PlayList.size()) return;
+        if (!plist.Play_list.size()) return;
         Widget_t* dia = showTextEntry(viewPlayList, 
                     "Playlist - save as:", "Save Play List as:");
         int x1, y1;
@@ -692,7 +659,7 @@ private:
         Widget_t *w = (Widget_t*)w_;
         AudioLooperUi *self = static_cast<AudioLooperUi*>(w->parent_struct);
         if ((w->flags & HAS_POINTER) && !adj_get_value(w->adj)){
-            if (!self->PlayList.size()) return;
+            if (!self->plist.Play_list.size()) return;
             self->save_as();
         }
     }
@@ -714,7 +681,7 @@ private:
         Widget_t *w = (Widget_t*)w_;
         AudioLooperUi *self = static_cast<AudioLooperUi*>(w->parent_struct);
         if ((w->flags & HAS_POINTER) && !adj_get_value(w->adj)){
-            if (!self->PlayList.size()) return;
+            if (!self->plist.Play_list.size()) return;
             if (!self->currentPlayList.empty()) {
                 self->newLabel = "Save as " + self->currentPlayList;
                 self->SaveItem->label = self->newLabel.c_str();
@@ -726,122 +693,6 @@ private:
     }
 
 /****************************************************************
-                Read/Save/Load a Play List
-****************************************************************/
-
-    // remove key from line
-    std::string remove_sub(std::string a, std::string b) {
-        std::string::size_type fpos = a.find(b);
-        if (fpos != std::string::npos )
-            a.erase(a.begin() + fpos, a.begin() + fpos + b.length());
-        return (a);
-    }
-
-    // remove a Play List from the config file
-    void remove_PlayList(std::string LoadName) {
-        std::ifstream infile(config_file);
-        std::ofstream outfile(config_file + "temp");
-        std::string line;
-        std::string key;
-        std::string value;
-        std::string ListName;
-        if (infile.is_open() && outfile.is_open()) {
-            while (std::getline(infile, line)) {
-                bool save = true;
-                std::istringstream buf(line);
-                buf >> key;
-                buf >> value;
-                if (key.compare("[PlayList]") == 0) ListName = remove_sub(line, "[PlayList] ");
-                if (ListName.compare(LoadName) == 0) {
-                    save = false;
-                    if (key.compare("[File]") == 0) {
-                        save = false;
-                    } else if (key.compare("[LoopPointL]") == 0) {
-                        save = false;
-                    } else if (key.compare("[LoopPointR]") == 0) {
-                        save = false;
-                    }
-                }
-                if (save) outfile << line<< std::endl;
-                key.clear();
-                value.clear();
-            }
-        infile.close();
-        outfile.close();
-        std::remove(config_file.c_str());
-        std::rename((config_file + "temp").c_str(), config_file.c_str());
-        }
-    }
-
-    // save a Play List to the config file
-    void save_PlayList(std::string lname, bool append) {
-        std::ofstream outfile(config_file, append ? std::ios::app : std::ios::trunc);
-        if (outfile.is_open()) {
-            outfile << "[PlayList] "<< lname << std::endl;
-            for (auto i = PlayList.begin(); i != PlayList.end(); i++) {
-                outfile << "[File] "<< std::get<1>(*i) << std::endl;
-                outfile << "[LoopPointL] "<< std::get<2>(*i) << std::endl;
-                outfile << "[LoopPointR] "<< std::get<3>(*i) << std::endl;
-            }
-        }
-        outfile.close();
-    }
-
-    // load a Play List by given name
-    void load_PlayList(std::string LoadName) {
-        std::ifstream infile(config_file);
-        std::string line;
-        std::string key;
-        std::string value;
-        std::string ListName;
-        std::string fileName;
-        uint32_t lPointL = 0;
-        uint32_t lPointR = INT_MAX;
-        if (infile.is_open()) {
-            while (std::getline(infile, line)) {
-                std::istringstream buf(line);
-                buf >> key;
-                buf >> value;
-                if (key.compare("[PlayList]") == 0) ListName = remove_sub(line, "[PlayList] ");
-                if (ListName.compare(LoadName) == 0) {
-                    if (key.compare("[File]") == 0) {
-                        fileName = remove_sub(line, "[File] ");
-                    } else if (key.compare("[LoopPointL]") == 0) {
-                        lPointL = std::stoi(value);
-                    } else if (key.compare("[LoopPointR]") == 0) {
-                        lPointR = std::stoi(value);
-                        PlayList.push_back(std::tuple<std::string, std::string, uint32_t, uint32_t>(
-                            std::string(basename((char*)fileName.c_str())), fileName, lPointL, lPointR));
-                    }
-                }
-                key.clear();
-                value.clear();
-            }
-        }
-        infile.close();
-    }
-
-    // get the Play List names form file
-    void readPlayList() {
-        std::ifstream infile(config_file);
-        std::string line;
-        std::string key;
-        std::string value;
-        std::string ListName;
-        if (infile.is_open()) {
-            while (std::getline(infile, line)) {
-                std::istringstream buf(line);
-                buf >> key;
-                buf >> value;
-                if (key.compare("[PlayList]") == 0) PlayListNames.push_back(remove_sub(line, "[PlayList] "));
-                key.clear();
-                value.clear();
-            }
-        }
-        infile.close();   
-    }
-
-/****************************************************************
                     save Sound File
 ****************************************************************/
 
@@ -850,20 +701,9 @@ private:
         Widget_t *w = (Widget_t*)w_;
         if(user_data !=NULL && strlen(*(const char**)user_data)) {
             AudioLooperUi *self = static_cast<AudioLooperUi*>(w->parent_struct);
-            if (!self->samples) return;
+            if (!self->af.samples) return;
             std::string lname(*(const char**)user_data);
-            SF_INFO sfinfo ;
-            sfinfo.channels = self->channels;
-            sfinfo.samplerate = self->jack_sr;
-            sfinfo.format = SF_FORMAT_WAV | SF_FORMAT_FLOAT  ;
-            SNDFILE * sf = sf_open(lname.c_str(), SFM_WRITE, &sfinfo);
-            if (!sf) {
-                std::cerr << "fail to open " << lname << std::endl;
-                return;
-            }
-            sf_writef_float(sf,&self->samples[self->loopPoint_l], self->loopPoint_r - self->loopPoint_l);
-            sf_write_sync(sf);
-            sf_close(sf);
+            self->af.saveAudioFile(lname, self->loopPoint_l, self->loopPoint_r, self->jack_sr);
         }
     }
 
@@ -874,95 +714,31 @@ private:
     // when Sound File loading fail, clear wave view and reset tittle
     void failToLoad() {
         loadNew = true;
-        update_waveview(wview, samples, samplesize);
+        update_waveview(wview, af.samples, af.samplesize);
         widget_set_title(w, "alooper");
     }
 
     // pre-load a Sound File on demand
     void preload_soundfile(const char* file, bool block_play = false) {
         if (block_play) ready = false;
-        SF_INFO info;
-        info.format = 0;
-
-        pre_channels = 0;
-        pre_samplesize = 0;
-        pre_samplerate = 0;
-        delete[] pre_samples;
-        pre_samples = nullptr;
-        // Open the wave file for reading
-        SNDFILE *sndfile = sf_open(file, SFM_READ, &info);
-
-        if (!sndfile) {
-            std::cerr << "Error: could not open file " << sf_error (sndfile) << std::endl;
-            return ;
-        }
-        if (info.channels > 2) {
-            std::cerr << "Error: only two channels maximum are supported!" << std::endl;
-            return ;
-        }
-        try {
-            pre_samples = new float[info.frames * info.channels];
-        } catch (...) {
-            std::cerr << "Error: could not load file" << std::endl;
-            return;
-        }
-        memset(pre_samples, 0, info.frames * info.channels * sizeof(float));
-        pre_samplesize = (uint32_t) sf_readf_float(sndfile, &pre_samples[0], info.frames);
-        if (!pre_samplesize ) pre_samplesize = info.frames;
-        pre_channels = info.channels;
-        pre_samplerate = info.samplerate;
-        sf_close(sndfile);
-        pre_samples = checkSampleRate(&pre_samplesize, pre_channels, pre_samples, pre_samplerate, jack_sr);
-        if (pre_samples) pre_load = true;
+        pre_load = pre_af.getAudioFile(file, jack_sr);
     }
 
     // load a Sound File when pre-load is the wrong file
     void load_soundfile(const char* file) {
-        // struct to hols sound file info
-        SF_INFO info;
-        info.format = 0;
-
-        channels = 0;
-        samplesize = 0;
-        samplerate = 0;
+        af.channels = 0;
+        af.samplesize = 0;
+        af.samplerate = 0;
         position = 0;
+
         if (Pa_IsStreamActive(stream)) {
             std::unique_lock<std::mutex> lk(WMutex);
             SyncWait->wait_for(lk, std::chrono::milliseconds(60));
         }
+
         ready = false;
-        delete[] samples;
-        samples = nullptr;
-
-        // Open the wave file for reading
-        SNDFILE *sndfile = sf_open(file, SFM_READ, &info);
-
-        if (!sndfile) {
-            std::cerr << "Error: could not open file " << sf_error (sndfile) << std::endl;
-            failToLoad();
-            return ;
-        }
-        if (info.channels > 2) {
-            std::cerr << "Error: only two channels maximum are supported!" << std::endl;
-            failToLoad();
-            return ;
-        }
-        try {
-            samples = new float[info.frames * info.channels];
-        } catch (...) {
-            std::cerr << "Error: could not load file" << std::endl;
-            failToLoad();
-            return;
-        }
-        memset(samples, 0, info.frames * info.channels * sizeof(float));
-        samplesize = (uint32_t) sf_readf_float(sndfile, &samples[0], info.frames);
-        if (!samplesize ) samplesize = info.frames;
-        channels = info.channels;
-        samplerate = info.samplerate;
-        position = 0;
-        sf_close(sndfile);
-        samples = checkSampleRate(&samplesize, channels, samples, samplerate, jack_sr);
-        if (samples) is_loaded = true;
+        is_loaded = af.getAudioFile(file, jack_sr);
+        if (!is_loaded) failToLoad();
     }
 
     // load Sound File data into memory
@@ -973,59 +749,59 @@ private:
                 is_loaded = false;
             }
         } else {
-            channels = 0;
-            samplesize = 0;
-            samplerate = 0;
+            af.channels = 0;
+            af.samplesize = 0;
+            af.samplerate = 0;
             position = 0;
             if (Pa_IsStreamActive(stream)) {
                 std::unique_lock<std::mutex> lk(WMutex);
                 SyncWait->wait_for(lk, std::chrono::milliseconds(60));
             }
-            delete[] samples;
-            samples = nullptr;
-            samples = pre_samples;
-            pre_samples = nullptr;
-            channels = pre_channels;
-            samplesize = pre_samplesize;
-            samplerate = pre_samplerate;
+            delete[] af.samples;
+            af.samples = nullptr;
+            af.samples = pre_af.samples;
+            pre_af.samples = nullptr;
+            af.channels = pre_af.channels;
+            af.samplesize = pre_af.samplesize;
+            af.samplerate = pre_af.samplerate;
             pre_load = false;
             
         }
         loadNew = true;
-        if (samples) {
-            adj_set_max_value(wview->adj, (float)samplesize);
-            //adj_set_max_value(loopMark_L->adj, (float)samplesize*0.5);
+        if (af.samples) {
+            adj_set_max_value(wview->adj, (float)af.samplesize);
+            //adj_set_max_value(loopMark_L->adj, (float)af.samplesize*0.5);
             adj_set_state(loopMark_L->adj, 0.0);
             loopPoint_l = 0;
-            //adj_set_max_value(loopMark_R->adj, (float)samplesize*0.5);
+            //adj_set_max_value(loopMark_R->adj, (float)af.samplesize*0.5);
             adj_set_state(loopMark_R->adj,1.0);
-            loopPoint_r = samplesize;
+            loopPoint_r = af.samplesize;
             if (haveLoopPoints) {
-                if (std::get<3>(*lfile) > samplesize)
-                    std::get<3>(*lfile) = samplesize;
+                if (std::get<3>(*plist.lfile) > af.samplesize)
+                    std::get<3>(*plist.lfile) = af.samplesize;
             }
             
-            update_waveview(wview, samples, samplesize);
+            update_waveview(wview, af.samples, af.samplesize);
             char name[256];
             strncpy(name, file, 255);
             widget_set_title(w, basename(name));
         } else {
-            samplesize = 0;
+            af.samplesize = 0;
             std::cerr << "Error: could not resample file" << std::endl;
             failToLoad();
         }
-        if (playBackwards) position = samplesize;
+        if (playBackwards) position = af.samplesize;
         if (haveLoopPoints) setLoopPoints();
         ready = true;
     }
 
     void setLoopPoints() {
-        float point_l = static_cast<float>(std::get<2>(*lfile));
-        float upper_l = static_cast<float>(samplesize*0.5);
-        float point_r = static_cast<float>(std::get<3>(*lfile) - upper_l);
-        position = std::get<2>(*lfile)+1;
-        loopPoint_l = std::get<2>(*lfile);
-        loopPoint_r = std::get<3>(*lfile);
+        float point_l = static_cast<float>(std::get<2>(*plist.lfile));
+        float upper_l = static_cast<float>(af.samplesize*0.5);
+        float point_r = static_cast<float>(std::get<3>(*plist.lfile) - upper_l);
+        position = std::get<2>(*plist.lfile)+1;
+        loopPoint_l = std::get<2>(*plist.lfile);
+        loopPoint_r = std::get<3>(*plist.lfile);
         adj_set_state(loopMark_L->adj, point_l/upper_l);
         adj_set_state(loopMark_R->adj, point_r/upper_l);
     }
@@ -1047,7 +823,7 @@ private:
                     self->pre_load = false;
                     self->forceReload = true;
                     self->addToPlayList(dndfile, true);
-                    self->playNow = self->PlayList.size() -2;
+                    self->playNow = self->plist.Play_list.size() -2;
                     if (self->pl.getProcess()) self->pl.runProcess();
                     break;
                 } else {
@@ -1152,16 +928,16 @@ private:
         Widget_t *w = (Widget_t*)w_;
         AudioLooperUi *self = static_cast<AudioLooperUi*>(w->parent_struct);
         float st = adj_get_state(w->adj);
-        uint32_t lp = (self->samplesize *0.5) * st;
+        uint32_t lp = (self->af.samplesize *0.5) * st;
         if (lp > self->position) {
             lp = self->position;
-            st = max(0.0, min(1.0, self->position/(self->samplesize*0.5)));
+            st = max(0.0, min(1.0, self->position/(self->af.samplesize*0.5)));
         }
         adj_set_state(w->adj, st);
         self->loopPoint_l = lp;
-        if (!self->PlayList.size()) return;
+        if (!self->plist.Play_list.size()) return;
         if (w->flags & HAS_POINTER && !self->blockWriteToPlayList) {
-            std::get<2>(*(self->PlayList.begin()+self->playNow)) = self->loopPoint_l;
+            std::get<2>(*(self->plist.Play_list.begin()+self->playNow)) = self->loopPoint_l;
         }
     }
 
@@ -1177,15 +953,15 @@ private:
                 int width = metrics.width;
                 int x = xbutton->x;
                 float st = max(0.0, min(1.0, static_cast<float>((float)x/(float)width)));
-                uint32_t lp = (self->samplesize *0.5) * st;
+                uint32_t lp = (self->af.samplesize *0.5) * st;
                 if (lp > self->position) {
                     lp = self->position;
-                    st = max(0.0, min(1.0, self->position/(self->samplesize*0.5)));
+                    st = max(0.0, min(1.0, self->position/(self->af.samplesize*0.5)));
                 }
                 adj_set_state(w->adj, st);
                 self->loopPoint_l = lp;
-                if (!self->PlayList.size()) return;
-                std::get<2>(*(self->PlayList.begin()+self->playNow)) = self->loopPoint_l;
+                if (!self->plist.Play_list.size()) return;
+                std::get<2>(*(self->plist.Play_list.begin()+self->playNow)) = self->loopPoint_l;
             }
         }
         expose_widget(w);
@@ -1196,16 +972,16 @@ private:
         Widget_t *w = (Widget_t*)w_;
         AudioLooperUi *self = static_cast<AudioLooperUi*>(w->parent_struct);
         float st = adj_get_state(w->adj);
-        uint32_t lp = (self->samplesize *0.5) + ((self->samplesize*0.5) * st);
+        uint32_t lp = (self->af.samplesize *0.5) + ((self->af.samplesize*0.5) * st);
         if (lp < self->position) {
             lp = self->position;
-            st = max(0.0, min(1.0, (self->position - (self->samplesize*0.5))/(self->samplesize*0.5)));
+            st = max(0.0, min(1.0, (self->position - (self->af.samplesize*0.5))/(self->af.samplesize*0.5)));
         }
         adj_set_state(w->adj, st);
         self->loopPoint_r = lp;
-        if (!self->PlayList.size()) return;
+        if (!self->plist.Play_list.size()) return;
         if (w->flags & HAS_POINTER && !self->blockWriteToPlayList) {
-            std::get<3>(*(self->PlayList.begin()+self->playNow)) = self->loopPoint_r;
+            std::get<3>(*(self->plist.Play_list.begin()+self->playNow)) = self->loopPoint_r;
         }
     }
 
@@ -1221,15 +997,15 @@ private:
                 int width = metrics.width;
                 int x = xbutton->x;
                 float st = max(0.0, min(1.0, static_cast<float>((float)x/(float)width)));
-                uint32_t lp = (self->samplesize *0.5) + ((self->samplesize*0.5) * st);
+                uint32_t lp = (self->af.samplesize *0.5) + ((self->af.samplesize*0.5) * st);
                 if (lp < self->position) {
                     lp = self->position;
-                    st = max(0.0, min(1.0, (self->position - (self->samplesize*0.5))/(self->samplesize*0.5)));
+                    st = max(0.0, min(1.0, (self->position - (self->af.samplesize*0.5))/(self->af.samplesize*0.5)));
                 }
                 adj_set_state(w->adj, st);
                 self->loopPoint_r = lp;
-                if (!self->PlayList.size()) return;
-                std::get<3>(*(self->PlayList.begin()+self->playNow)) = self->loopPoint_r;
+                if (!self->plist.Play_list.size()) return;
+                std::get<3>(*(self->plist.Play_list.begin()+self->playNow)) = self->loopPoint_r;
             }
         }
         expose_widget(w);
@@ -1412,13 +1188,13 @@ private:
         cairo_stroke(cri);
 
         if (wave_view->size<1 || !ready) return;
-        int step = (wave_view->size/width)/channels;
-        float lstep = (float)(half_height_t)/channels;
+        int step = (wave_view->size/width)/af.channels;
+        float lstep = (float)(half_height_t)/af.channels;
         cairo_set_line_width(cri,2);
         cairo_set_source_rgba(cri, 0.55, 0.65, 0.55, 1);
 
-        int pos = half_height_t/channels;
-        for (int c = 0; c < (int)channels; c++) {
+        int pos = half_height_t/af.channels;
+        for (int c = 0; c < (int)af.channels; c++) {
             cairo_pattern_t *pat = cairo_pattern_create_linear (0, pos, 0, height);
             cairo_pattern_add_color_stop_rgba
                 (pat, 0,1.53,0.33,0.33, 1.0);
@@ -1432,7 +1208,7 @@ private:
             cairo_set_source(cri, pat);
             for (int i=0;i<width-4;i++) {
                 cairo_move_to(cri,i+2,pos);
-                float w = wave_view->wave[int(c+(i*channels)*step)];
+                float w = wave_view->wave[int(c+(i*af.channels)*step)];
                 cairo_line_to(cri, i+2,(float)(pos)+ (-w * lstep));
                 cairo_line_to(cri, i+2,(float)(pos)+ (w * lstep));
             }

@@ -36,15 +36,15 @@ static int process(const void* inputBuffer, void* outputBuffer,
     (void) timeInfo;
     (void) statusFlags;
 
-    if (( ui.samplesize && ui.samples != nullptr) && ui.play && ui.ready) {
+    if (( ui.af.samplesize && ui.af.samples != nullptr) && ui.play && ui.ready) {
         float fSlow0 = 0.0010000000000000009 * ui.gain;
         for (uint32_t i = 0; i<(uint32_t)frames; i++) {
             fRec0[0] = fSlow0 + 0.999 * fRec0[1];
-            for (uint32_t c = 0; c < ui.channels; c++) {
+            for (uint32_t c = 0; c < ui.af.channels; c++) {
                 if (!c) {
-                    *out++ = ui.samples[ui.position*ui.channels] * fRec0[0];
-                    if (ui.channels ==1) *out++ = ui.samples[ui.position*ui.channels] * fRec0[0];
-                } else *out++ = ui.samples[ui.position*ui.channels+c] * fRec0[0];
+                    *out++ = ui.af.samples[ui.position*ui.af.channels] * fRec0[0];
+                    if (ui.af.channels ==1) *out++ = ui.af.samples[ui.position*ui.af.channels] * fRec0[0];
+                } else *out++ = ui.af.samples[ui.position*ui.af.channels+c] * fRec0[0];
             }
             fRec0[1] = fRec0[0];
             // track play-head position
