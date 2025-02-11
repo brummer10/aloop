@@ -124,7 +124,7 @@ public:
         outputParameters.sampleFormat = paFloat32;
         outputParameters.suggestedLatency = 0.050;
         outputParameters.hostApiSpecificStreamInfo = nullptr;
-        SampleRate = 44100;
+        SampleRate = info->defaultSampleRate;
         err = Pa_OpenStream(&stream, ichannels ? &inputParameters : nullptr, 
                             ochannels ? &outputParameters : nullptr, SampleRate,
                             paFramesPerBufferUnspecified, paClipOff, process, arg);
