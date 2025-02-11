@@ -105,6 +105,11 @@ public:
 
         devices.clear();
         #else
+        const PaDeviceInfo *info;
+        info = Pa_GetDeviceInfo(Pa_GetDefaultOutputDevice());
+        std::cout << "using (" << info->name << ") " << getHostName(info->hostApi) 
+            << " with " << info->defaultSampleRate << "hz Sample Rate" << std::endl;
+
         PaStreamParameters inputParameters;
         inputParameters.device = Pa_GetDefaultInputDevice();
         inputParameters.channelCount = ichannels;

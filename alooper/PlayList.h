@@ -13,6 +13,10 @@
 #include <climits>
 #include <fstream>
 #include <iostream>
+#include <cstdint>
+#ifdef _WIN32
+#include <libgen.h>
+#endif
 
 #pragma once
 
@@ -76,7 +80,8 @@ public:
                 std::istringstream buf(line);
                 buf >> key;
                 buf >> value;
-                if (key.compare("[PlayList]") == 0) ListName = remove_sub(line, "[PlayList] ");
+                if (key.compare("[PlayList]") == 0)
+                    ListName = remove_sub(line, "[PlayList] ");
                 if (ListName.compare(LoadName) == 0) {
                     save = false;
                     if (key.compare("[File]") == 0) {
@@ -147,7 +152,7 @@ public:
     }
 
     // get the Play List names form file
-    void readPlayList() {
+    void read_PlayList() {
         std::ifstream infile(config_file);
         std::string line;
         std::string key;
@@ -159,12 +164,25 @@ public:
                 std::istringstream buf(line);
                 buf >> key;
                 buf >> value;
-                if (key.compare("[PlayList]") == 0) PlayListNames.push_back(remove_sub(line, "[PlayList] "));
+                if (key.compare("[PlayList]") == 0)
+                    PlayListNames.push_back(remove_sub(line, "[PlayList] "));
                 key.clear();
                 value.clear();
             }
         }
         infile.close();   
+    }
+
+    // move a vector entry to a new index
+    template <typename t> 
+    void move(std::vector<t>& v, size_t oldIndex, size_t newIndex) {
+        if (oldIndex > newIndex) {
+            std::rotate(v.rend() - oldIndex - 1, v.rend()
+                    - oldIndex, v.rend() - newIndex);
+        } else {
+            std::rotate(v.begin() + oldIndex, v.begin() +
+                    oldIndex + 1, v.begin() + newIndex + 1);
+        }
     }
 
 private:

@@ -51,10 +51,10 @@ static int process(const void* inputBuffer, void* outputBuffer,
             ui.playBackwards ? ui.position-- : ui.position++;
             if (ui.position > ui.loopPoint_r) {
                 ui.position = ui.loopPoint_l;
-                if (ui.pl.getProcess()) ui.pl.runProcess();
+                ui.loadFile();
             } else if (ui.position <= ui.loopPoint_l) {
                 ui.position = ui.loopPoint_r;
-                if (ui.pl.getProcess()) ui.pl.runProcess();
+                ui.loadFile();
             // ramp up on loop start point
             } else if (ui.playBackwards ?
                         ui.position > ui.loopPoint_r - ramp_step :

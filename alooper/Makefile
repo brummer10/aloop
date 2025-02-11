@@ -72,7 +72,7 @@ ifeq ($(TARGET), Linux)
 	CFLAGS += -I. -I./zita-resampler-1.1.0 -Wall -funroll-loops `pkg-config --cflags sndfile $(USEAPI)`\
 	-ffast-math -fomit-frame-pointer -fstrength-reduce -fdata-sections -Wl,--gc-sections \
 	-pthread $(SSE_CFLAGS)
-	CXXFLAGS += -MMD -std=c++17 -D_OS_UNIX_ -DALVER=\"$(VER)\" $(CFLAGS)
+	CXXFLAGS += -MMD -std=c++20 -D_OS_UNIX_ -DALVER=\"$(VER)\" $(CFLAGS)
 	LDFLAGS += -I. -lm -pthread -lpthread `pkg-config --libs sndfile $(USEAPI)`
 	ifneq ($(MACOS)$(WINDOWS),true)
 		LDFLAGS += -lrt -lc
@@ -81,7 +81,7 @@ ifeq ($(TARGET), Linux)
 	-L. $(LIB_DIR)libxputty.a  `pkg-config --static --cflags --libs cairo x11` -lm
 else ifeq ($(TARGET), Windows)
 
-	CXXFLAGS += -MMD -std=c++17 $(CFLAGS)
+	CXXFLAGS += -MMD -std=c++20 -DALVER=\"$(VER)\" $(CFLAGS)
 
 	LDFLAGS += -I. -lm -pthread -lpthread  $(PAWPAW_LFLAGS) `$(PKGCONFIG) --cflags --libs sndfile $(USEAPI)`
 
