@@ -771,11 +771,11 @@ private:
             af.samplesize = 0;
             af.samplerate = 0;
             position = 0;
-            ready = false;
             if (Pa_IsStreamActive(stream)) {
                 std::unique_lock<std::mutex> lk(WMutex);
                 SyncWait->wait_for(lk, std::chrono::milliseconds(60));
             }
+            ready = false;
             delete[] af.samples;
             af.samples = nullptr;
             af.samples = pre_af.samples;
@@ -915,6 +915,13 @@ private:
             self->playBackwards = adj_get_value(self->backwards->adj) ? true : false;
         } else if (key->keycode == XKeysymToKeycode(w->app->dpy, XK_q)) {
             self->onExit();
+        }
+        if ((key->state & ControlMask) && (key->keycode == XKeysymToKeycode(w->app->dpy, XK_plus))) {
+            os_resize_window(self->w->app->dpy, self->w, self->w->width+1, self->w->height+1);
+            expose_widget(self->w);
+        } else if ((key->state & ControlMask) && (key->keycode == XKeysymToKeycode(w->app->dpy, XK_minus))) {
+            os_resize_window(self->w->app->dpy, self->w, self->w->width-1, self->w->height-1);
+            expose_widget(self->w);
         }
     }
 
