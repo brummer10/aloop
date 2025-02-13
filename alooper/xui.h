@@ -900,6 +900,22 @@ private:
         }
     }
 
+    #if defined(_WIN32)
+    void getWindowDecorationSize(int *width, int *height) {
+        DWORD dwStyle = WS_OVERLAPPEDWINDOW;
+        DWORD dwExStyle = WS_EX_CONTROLPARENT | WS_EX_ACCEPTFILES;
+        RECT Rect = {0};
+        BOOL bMenu = false;
+        Rect.right = *width;
+        Rect.bottom = *height;
+        if (AdjustWindowRectEx(&Rect, dwStyle, bMenu, dwExStyle)) {
+            *width = Rect.right - Rect.left;
+            *height = Rect.bottom - Rect.top;
+        }
+       
+    }
+    #endif
+
     // toggle pause button with space bar
     static void key_press(void *w_, void *key_, void *user_data) {
         Widget_t *w = (Widget_t*)w_;
@@ -915,12 +931,21 @@ private:
             self->playBackwards = adj_get_value(self->backwards->adj) ? true : false;
         } else if (key->keycode == XKeysymToKeycode(w->app->dpy, XK_q)) {
             self->onExit();
-        }
-        if ((key->state & ControlMask) && (key->keycode == XKeysymToKeycode(w->app->dpy, XK_plus))) {
-            os_resize_window(self->w->app->dpy, self->w, self->w->width+1, self->w->height+1);
+        } else if ((key->state & ControlMask) && (key->keycode == XKeysymToKeycode(w->app->dpy, XK_plus))) {
+            int x = 1;
+            int y = 1;
+            #if defined(_WIN32)
+            self->getWindowDecorationSize(&x, &y);
+            #endif
+            os_resize_window(self->w->app->dpy, self->w, self->w->width + x, self->w->height + y);
             expose_widget(self->w);
         } else if ((key->state & ControlMask) && (key->keycode == XKeysymToKeycode(w->app->dpy, XK_minus))) {
-            os_resize_window(self->w->app->dpy, self->w, self->w->width-1, self->w->height-1);
+            int x = 1;
+            int y = 1;
+            #if defined(_WIN32)
+            self->getWindowDecorationSize(&x, &y);
+            #endif
+            os_resize_window(self->w->app->dpy, self->w, self->w->width + x -2, self->w->height + y -2);
             expose_widget(self->w);
         }
     }
