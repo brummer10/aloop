@@ -69,7 +69,7 @@ public:
                 dev.index = i;
                 dev.SampleRate = SampleRate = info->defaultSampleRate;
                 dev.Name = info->name;
-                snprintf(dev.hostName, 63, getHostName(info->hostApi));
+                snprintf(dev.hostName, 63,"%s", getHostName(info->hostApi));
                 devices.push_back(dev);
             }
             
