@@ -50,6 +50,7 @@ clean:
 	@rm -f ./libxputty/xputty/resources/save_.png
 	@rm -f ./libxputty/xputty/resources/backwards.png
 	@rm -f ./libxputty/xputty/resources/okay.png
+	@rm -f ./libxputty/xputty/resources/expand.png
 
 
 features:

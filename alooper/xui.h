@@ -215,14 +215,26 @@ public:
     // create the main GUI
     void createGUI(Xputty *app, std::condition_variable *Sync_) {
         SyncWait =Sync_;
-        w = create_window(app, os_get_root_window(app, IS_WINDOW), 0, 0, 400, 170);
-        widget_set_title(w, "alooper");
+        w_top = create_window(app, os_get_root_window(app, IS_WINDOW), 0, 0, 400, 170);
+        widget_set_title(w_top, "alooper");
+        widget_set_icon_from_png(w_top,LDVAR(alooper_png));
+        #if defined(__linux__) || defined(__FreeBSD__) || \
+            defined(__NetBSD__) || defined(__OpenBSD__)
+        widget_set_dnd_aware(w_top);
+        #endif
+        w_top->parent_struct = (void*)this;
+        w_top->func.dnd_notify_callback = dnd_load_response;
+        w_top->func.key_press_callback = key_press;
+
+        w = create_widget(app, w_top, 0, 0, 400, 170);
         widget_set_icon_from_png(w,LDVAR(alooper_png));
         #if defined(__linux__) || defined(__FreeBSD__) || \
             defined(__NetBSD__) || defined(__OpenBSD__)
         widget_set_dnd_aware(w);
         #endif
         w->parent_struct = (void*)this;
+        w->parent = w_top;
+        w->scale.gravity = NORTHWEST;
         w->func.expose_callback = draw_window;
         w->func.dnd_notify_callback = dnd_load_response;
         w->func.key_press_callback = key_press;
@@ -254,19 +266,25 @@ public:
         wview->func.button_release_callback = set_playhead;
         wview->func.key_press_callback = key_press;
 
-        filebutton = add_file_button(w, 20, 130, 30, 30, getenv("HOME") ? getenv("HOME") : "/", "audio");
+        expand = add_image_toggle_button(w, "", 20, 130, 30, 30);
+        expand->parent_struct = (void*)this;
+        expand->scale.gravity = SOUTHEAST;
+        widget_get_png(expand, LDVAR(expand_png));
+        expand->func.value_changed_callback = button_expand_callback;
+
+        filebutton = add_file_button(w, 60, 130, 30, 30, getenv("HOME") ? getenv("HOME") : "/", "audio");
         filebutton->scale.gravity = SOUTHEAST;
         filebutton->parent_struct = (void*)this;
         widget_get_png(filebutton, LDVAR(dir_png));
         filebutton->func.user_callback = dialog_response;
 
-        lview = add_image_toggle_button(w, "", 60, 130, 30, 30);
+        lview = add_image_toggle_button(w, "", 90, 130, 30, 30);
         lview->parent_struct = (void*)this;
         lview->scale.gravity = SOUTHEAST;
         widget_get_png(lview, LDVAR(menu_png));
         lview->func.value_changed_callback = button_lview_callback;
 
-        saveLoop = add_save_file_button(w, 90, 130, 30, 30, getenv("HOME") ? getenv("HOME") : "/", "audio");
+        saveLoop = add_save_file_button(w, 120, 130, 30, 30, getenv("HOME") ? getenv("HOME") : "/", "audio");
         saveLoop->parent_struct = (void*)this;
         saveLoop->scale.gravity = SOUTHEAST;
         widget_get_png(saveLoop, LDVAR(save__png));
@@ -303,7 +321,7 @@ public:
         w_quit->scale.gravity = SOUTHWEST;
         w_quit->func.value_changed_callback = button_quit_callback;
 
-        widget_show_all(w);
+        widget_show_all(w_top);
 
         pa.startTimeout(60);
         pa.set<AudioLooperUi, &AudioLooperUi::updateUI>(this);
@@ -314,6 +332,7 @@ public:
     }
 
 private:
+    Widget_t *w_top;
     Widget_t *w_quit;
     Widget_t *filebutton;
     Widget_t *wview;
@@ -335,6 +354,7 @@ private:
     Widget_t *SaveMenu;
     Widget_t *SaveItem;
     Widget_t *saveLoop;
+    Widget_t *expand;
 
     SupportedFormats supportedFormats;
     AudioFile pre_af;
@@ -361,15 +381,15 @@ private:
 
     // create the Play List window
     void createPlayListView(Xputty *app) {
-        viewPlayList = create_window(app, os_get_root_window(app, IS_WINDOW), 0, 0, 400, 340);
+        viewPlayList = create_widget(app, w_top, 0, 170, 400, 340);
         viewPlayList->flags |= HIDE_ON_DELETE;
-        widget_set_title(viewPlayList, "alooper-Playlist");
-        widget_set_icon_from_png(viewPlayList,LDVAR(alooper_png));
         #if defined(__linux__) || defined(__FreeBSD__) || \
             defined(__NetBSD__) || defined(__OpenBSD__)
         widget_set_dnd_aware(viewPlayList);
         #endif
         viewPlayList->parent_struct = (void*)this;
+        viewPlayList->parent = w_top;
+        viewPlayList->scale.gravity = EASTSOUTH;
         viewPlayList->func.expose_callback = draw_window;
         viewPlayList->func.dnd_notify_callback = dnd_load_playlist;
 
@@ -427,7 +447,10 @@ private:
     // triggered by audio server when end of current file is reached,
     // or triggered from dnd btw. a load file event (File browser)
     void loadFromPlayList() {
-        if (((plist.Play_list.size() < 2) || !usePlayList) && !forceReload) return;
+        if (((plist.Play_list.size() < 2) || !usePlayList) && !forceReload) {
+            execute.store(true, std::memory_order_release);
+            return;
+        }
         playNow++;
         plist.lfile = plist.Play_list.begin()+playNow;
         if (plist.lfile >= plist.Play_list.end()) {
@@ -612,10 +635,12 @@ private:
         self->currentPlayList = self->plist.PlayListNames[v];
         if (!self->plist.Play_list.size()) return;
         if (!self->af.samples) {
-            self->ready = false;
             self->plist.lfile = self->plist.Play_list.begin();
             self->playNow = self->plist.Play_list.size();
-            self->loadFile();
+            if (self->usePlayList) {
+                self->ready = false;
+                self->loadFile();
+            }
         } else {
             self->playNow = self->plist.Play_list.size()-1;
             self->pre_load = false;
@@ -733,7 +758,7 @@ private:
     void failToLoad() {
         loadNew = true;
         update_waveview(wview, af.samples, af.samplesize);
-        widget_set_title(w, "alooper");
+        widget_set_title(w_top, "alooper");
     }
 
     // pre-load a Sound File on demand
@@ -803,7 +828,7 @@ private:
             update_waveview(wview, af.samples, af.samplesize);
             char name[256];
             strncpy(name, file, 255);
-            widget_set_title(w, basename(name));
+            widget_set_title(w_top, basename(name));
         } else {
             af.samplesize = 0;
             std::cerr << "Error: could not resample file" << std::endl;
@@ -914,6 +939,20 @@ private:
         }
        
     }
+    #else
+    void getWindowDecorationSize(int *width, int *height) {
+        Atom type;
+        int format;
+        unsigned long  count = 0, remaining;
+        unsigned char* data = 0;
+        long* extents;
+        Atom _NET_FRAME_EXTENTS = XInternAtom(w_top->app->dpy, "_NET_FRAME_EXTENTS", True);
+        XGetWindowProperty(w_top->app->dpy, w_top->widget, _NET_FRAME_EXTENTS,
+            0, 4, False, AnyPropertyType,&type, &format, &count, &remaining, &data);
+        extents = (long*) data;
+        *height = - static_cast<int>(extents[2])/2;
+        *width = - static_cast<int>(extents[0])/2;
+    }
     #endif
 
     // toggle pause button with space bar
@@ -948,6 +987,57 @@ private:
             os_resize_window(self->w->app->dpy, self->w, self->w->width + x -2, self->w->height + y -2);
             expose_widget(self->w);
         }
+    }
+
+    static void button_expand_callback(void *w_, void* user_data) {
+        Widget_t *w = (Widget_t*)w_;
+        AudioLooperUi *self = static_cast<AudioLooperUi*>(w->parent_struct);
+        if ((w->flags & HAS_POINTER) && adj_get_value(w->adj)){
+            if (!self->viewPlayList) self->createPlayListView(self->w->app);
+            self->rebuildPlayList();
+            int x = 0;
+            int y = 0;
+            int x1 = 0;
+            int y1 = 0;
+            #if defined(_WIN32)
+            self->getWindowDecorationSize(&x, &y);
+            x1 = x;
+            y1 = y;
+            #else
+            self->getWindowDecorationSize(&x1, &y1);
+            #endif
+            os_translate_coords(self->w_top, self->w_top->widget, 
+                 os_get_root_window(w->app, IS_WIDGET), x1, y1, &x1, &y1);
+            self->w_top->height += 340;
+            self->w_top->scale.init_height +=340;
+            os_set_window_min_size(self->w_top, 200, 170 /2 + 340, self->w_top->width + x, self->w_top->height + y);
+            os_resize_window(self->w->app->dpy, self->w_top, self->w_top->width + x, self->w_top->height + y);
+            os_move_window(self->w->app->dpy, self->w_top, x1, y1);
+            widget_show_all(self->viewPlayList);
+        } else {
+            int x = 0;
+            int y = 0;
+            int x1 = 0;
+            int y1 = 0;
+            #if defined(_WIN32)
+            self->getWindowDecorationSize(&x, &y);
+            x1 = x;
+            y1 = y;
+            #else
+            self->getWindowDecorationSize(&x1, &y1);
+            #endif
+            os_translate_coords(self->w_top, self->w_top->widget,
+                os_get_root_window(w->app, IS_WIDGET), x1, y1, &x1, &y1);
+            self->w_top->height -= 340;
+            self->w_top->scale.init_height -= 340;
+            os_set_window_min_size(self->w_top, 200, 170/2, self->w_top->width + x , self->w_top->height + y);
+            os_resize_window(self->w->app->dpy, self->w_top, self->w_top->width + x , self->w_top->height + y);
+            os_move_window(self->w->app->dpy, self->w_top, x1, y1);
+            widget_hide(self->viewPlayList);
+        }
+        transparent_draw(self->w, nullptr);
+        //expose_widget(self->w_top);
+        expose_widget(self->w_top);
     }
 
     // pause
@@ -1090,16 +1180,25 @@ private:
         Widget_t *w = (Widget_t*)w_;
         AudioLooperUi *self = static_cast<AudioLooperUi*>(w->parent_struct);
         if ((w->flags & HAS_POINTER) && adj_get_value(w->adj)){
-            if (!self->viewPlayList) self->createPlayListView(self->w->app);
-            self->rebuildPlayList();
-            int x1, y1;
-            os_translate_coords( self->w, self->w->widget, 
-                os_get_root_window(self->w->app, IS_WIDGET), 0, 0, &x1, &y1);
-            widget_show_all(self->viewPlayList);
-            os_move_window(self->w->app->dpy,self->viewPlayList,x1, y1+16+self->w->height);
+            if (!self->viewPlayList) {
+                self->createPlayListView(self->w->app);
+                self->rebuildPlayList();
+            }
+            //int x1, y1;
+           // os_translate_coords( self->w, self->w->widget, 
+            //    os_get_root_window(self->w->app, IS_WIDGET), 0, 0, &x1, &y1);
+            //widget_show_all(self->viewPlayList);
+            //os_move_window(self->w->app->dpy,self->viewPlayList,x1, y1+16+self->w->height);
             self->usePlayList = true;
+            if (!self->af.samples && self->plist.Play_list.size()) {
+                self->ready = false;
+                self->plist.lfile = self->plist.Play_list.begin();
+                self->playNow = self->plist.Play_list.size();
+                self->loadFile();
+            }
+
         } else {
-            widget_hide(self->viewPlayList);
+            //widget_hide(self->viewPlayList);
             self->usePlayList = false;
         }
     }
@@ -1374,6 +1473,7 @@ private:
     }
 
     static void boxShadowOutset(cairo_t* const cr, int x, int y, int width, int height, bool fill) {
+        float step = static_cast<float>(17.0/height);
         cairo_pattern_t *pat = cairo_pattern_create_linear (x, y, x + width, y);
         cairo_pattern_add_color_stop_rgba
             (pat, 0,0.33,0.33,0.33, 1.0);
@@ -1392,7 +1492,7 @@ private:
         cairo_pattern_add_color_stop_rgba
             (pat, 0,0.33,0.33,0.33, 1.0);
         cairo_pattern_add_color_stop_rgba
-            (pat, 0.1,0.33 * 0.6,0.33 * 0.6,0.33 * 0.6, 0.0);
+            (pat, step,0.33 * 0.6,0.33 * 0.6,0.33 * 0.6, 0.0);
         cairo_pattern_add_color_stop_rgba
             (pat, 0.97, 0.05 * 2.0, 0.05 * 2.0, 0.05 * 2.0, 0.0);
         cairo_pattern_add_color_stop_rgba
@@ -1405,21 +1505,26 @@ private:
 
     static void draw_window(void *w_, void* user_data) {
         Widget_t *w = (Widget_t*)w_;
+        Widget_t *p = (Widget_t*)w->parent;
         Metrics_t metrics;
-        os_get_window_metrics(w, &metrics);
+        os_get_window_metrics(p, &metrics);
         int width = metrics.width;
         int height = metrics.height;
         if (!metrics.visible) return;
+        int x1, y1;
+        os_translate_coords(w, p->widget, w->widget, 0, 0, &x1, &y1);
+
 
         cairo_pattern_t *pat;
-        pat = cairo_pattern_create_linear (0.0, 0.0, width , height);
+        pat = cairo_pattern_create_linear (x1, y1, width , height);
         cairo_pattern_add_color_stop_rgba (pat, 1, 0.2, 0.2, 0.2, 1);
         cairo_pattern_add_color_stop_rgba (pat, 0, 0, 0, 0., 1);
-        cairo_rectangle(w->crb,0,0,width,height);
+        //cairo_rectangle(w->crb,0,0,width,height);
         cairo_set_source (w->crb, pat);
-        cairo_fill_preserve (w->crb);
-        boxShadowOutset(w->crb, 0.0, 0.0, width , height, true);
-        cairo_fill (w->crb);
+        cairo_paint (w->crb);
+
+        boxShadowOutset(w->crb, x1, y1, width , height, false);
+        //cairo_fill (w->crb);
         cairo_pattern_destroy (pat);
     }
 
