@@ -1,0 +1,6 @@
+alooper/alooper
+alooper/*.d
+alooper/*.a
+alooper/zita-resampler-1.1.0/*.d
+alooper/zita-resampler-1.1.0/*.o
+bin/
