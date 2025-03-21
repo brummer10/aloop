@@ -76,39 +76,56 @@ static int process(const void* inputBuffer, void* outputBuffer,
     ui.rb->setTimeRatio(ui.timeRatio);
     ui.rb->setPitchScale(ui.pitchScale);
 
-    uint32_t needed = frames;
+    
     if (( ui.af.samplesize && ui.af.samples != nullptr) && ui.play && ui.ready) {
-    while (needed>0){
-        size_t available = ui.rb->available();
-        if (available > 0){
-            size_t retrived_frames_count = ui.rb->retrieve(rubberband_output_buffers,min(available,min(needed,MAX_RUBBERBAND_BUFFER_FRAMES)));
-            for (size_t i = 0 ; i < retrived_frames_count ;i++){
-                for (uint32_t c = 0 ; c < min(ui.af.channels,MAX_RUBBERBAND_CHANNELS) ;c++){
-                 *out++ = rubberband_output_buffers[c][i];
+
+        uint32_t needed = frames;
+        while (needed>0){
+            size_t available = ui.rb->available();
+            if (available > 0){
+                size_t retrived_frames_count = ui.rb->retrieve(rubberband_output_buffers,min(available,min(needed,MAX_RUBBERBAND_BUFFER_FRAMES)));
+                for (size_t i = 0 ; i < retrived_frames_count ;i++){
+                    for (uint32_t c = 0 ; c < min(ui.af.channels,MAX_RUBBERBAND_CHANNELS) ;c++){
+                     *out++ = rubberband_output_buffers[c][i];
+                    }
                 }
+                needed -= retrived_frames_count;
             }
-            needed -= retrived_frames_count;
+            if (needed>0){            
+                int process_samples;
+                if (ui.playBackwards){
+                    if (ui.position < ui.loopPoint_l) {
+                        ui.position = ui.loopPoint_r;
+                    }    
+                    process_samples = min(ui.position - ui.loopPoint_l,MAX_RUBBERBAND_BUFFER_FRAMES);
+                    for (int i = 0 ; i < process_samples ;i++){
+                        for (uint32_t c = 0 ; c < min(ui.af.channels,MAX_RUBBERBAND_CHANNELS) ;c++){
+                            rubberband_input_buffers[c][i] = ui.af.samples[ (ui.position - i) * ui.af.channels + c];
+                        }
+                    }
+                    ui.position -= process_samples;
+                } else {
+                    if (ui.position > ui.loopPoint_r) {
+                        ui.position = ui.loopPoint_l;                
+                        // TODO why is loadFile used at this point in original audio callback ????
+                        // ui.loadFile(); 
+                    }
+                   // could estimate what is needed instead of passing the whole buffer in worst case
+                    process_samples = min(ui.loopPoint_r-ui.position,MAX_RUBBERBAND_BUFFER_FRAMES);
+                    for (int i = 0 ; i < process_samples ;i++){
+                        for (uint32_t c = 0 ; c < min(ui.af.channels,MAX_RUBBERBAND_CHANNELS) ;c++){
+                            rubberband_input_buffers[c][i] = ui.af.samples[ (ui.position + i) * ui.af.channels + c];
+                        }
+                    }
+                    ui.position += process_samples;
+                }            
+                ui.rb->process( rubberband_input_buffers,process_samples,false);
+                
+            }
         }
-        if (needed>0){            
-            if (ui.position > ui.loopPoint_r) {
-                ui.position = ui.loopPoint_l;                
-                // TODO why is loadFile used at this point in original audio callback ????
-               // ui.loadFile(); 
-            }
-            // could estimate what is needed instead of passing the whole buffer in worst case
-            int process_samples = min(ui.loopPoint_r-ui.position,MAX_RUBBERBAND_BUFFER_FRAMES);
-             for (int i = 0 ; i < process_samples ;i++){
-                for (uint32_t c = 0 ; c < min(ui.af.channels,MAX_RUBBERBAND_CHANNELS) ;c++){
-                    rubberband_input_buffers[c][i] = ui.af.samples[ (ui.position + i) * ui.af.channels + c];
-                }
-            }
-            ui.rb->process( rubberband_input_buffers,process_samples,false);
-            ui.position += process_samples;
-        }
-    }
     } else {
-        ui.rb->reset();
-        memset(out, 0.0, (uint32_t)frames * 2 * sizeof(float));
+            ui.rb->reset();
+            memset(out, 0.0, (uint32_t)frames * 2 * sizeof(float));
     }
     
 
