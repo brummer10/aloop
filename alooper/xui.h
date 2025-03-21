@@ -11,6 +11,7 @@
 #ifndef JACKAPI
 #include <portaudio.h>
 #endif
+#include <rubberband/RubberBandStretcher.h>
 #include <algorithm>
 #include <cctype>
 #include <condition_variable>
@@ -122,12 +123,15 @@ public:
     ParallelThread pa;
     ParallelThread pl;
     AudioFile af;
-
+    std::unique_ptr<RubberBand::RubberBandStretcher> rb;
+    
     uint32_t jack_sr;
     uint32_t position;
     uint32_t loopPoint_l;
     uint32_t loopPoint_r;
     float gain;
+    float timeRatio;
+    float pitchScale;
     bool loadNew;
     bool play;
     bool ready;
@@ -140,6 +144,8 @@ public:
         loopPoint_r = 1000;
         playNow = 0;
         gain = std::pow(1e+01, 0.05 * 0.0);
+        timeRatio = 1.0;
+        pitchScale = 1.0;
         pre_load = false;
         is_loaded = false;
         loadNew = false;
@@ -163,17 +169,31 @@ public:
 /****************************************************************
                       public function calls
 ****************************************************************/
-
+    void setPitchScale(float tuning, float fine_tuning){        
+        pitchScale = pow(2.0f, (tuning + fine_tuning / 100.0f) / 12.0f);
+        // printf("tuning_callback: %f fine_tuning_callback: %f => %f \n",tuning,fine_tuning,pitchScale);
+    }
     // stop background threads and quit main window
     void onExit() {
         pl.stop();
         pa.stop();
         quit(w);
     }
-
+    void intializeRubberband(){
+       RubberBand::RubberBandStretcher::Options rb_options = RubberBand::RubberBandStretcher::OptionProcessRealTime;
+       int fixedChannelCountButWhy = 2;
+       rb = std::make_unique<RubberBand::RubberBandStretcher>(jack_sr,fixedChannelCountButWhy, rb_options);
+       // fprintf(stderr, "[player] RubberBand init with (sr %d) (channels: %d) (options: %d)\n",jack_sr, fixedChannelCountButWhy, rb_options);
+       // fprintf(stderr, "[player] RubberBand engine version : %d\n", rb->getEngineVersion());
+       // fprintf(stderr, "[player] RubberBand channel count : %ld\n", rb->getChannelCount());
+    }
     // receive Sample Rate from audio back-end
     void setJackSampleRate(uint32_t sr) {
-        jack_sr = sr;
+        bool changed = jack_sr != sr        ;
+        jack_sr = sr;        
+        if (changed){
+            intializeRubberband();
+        }
     }
 
     // receive stream object from portaudio to check 
@@ -289,6 +309,27 @@ public:
         saveLoop->scale.gravity = SOUTHEAST;
         widget_get_png(saveLoop, LDVAR(save__png));
         saveLoop->func.user_callback = write_soundfile;
+       
+        tuning = add_knob(w, "tuning",120,130,28,28);
+        tuning->parent_struct = (void*)this;
+        tuning->scale.gravity = SOUTHWEST;
+        set_adjustment(tuning->adj, 0.0, 0.0, -12, 12, 1.0, CL_CONTINUOS);
+        tuning->func.expose_callback = draw_knob;
+        tuning->func.value_changed_callback = tuning_callback;
+
+        fine_tuning = add_knob(w, "fine tuning",150,130,28,28);
+        fine_tuning->parent_struct = (void*)this;
+        fine_tuning->scale.gravity = SOUTHWEST;
+        set_adjustment(fine_tuning->adj, 0.0, 0.0, -50, 50, 1.0, CL_CONTINUOS);
+        fine_tuning->func.expose_callback = draw_knob;
+        fine_tuning->func.value_changed_callback = fine_tuning_callback;
+
+        speed = add_knob(w, "speed",180,130,28,28);
+        speed->parent_struct = (void*)this;
+        speed->scale.gravity = SOUTHWEST;
+        set_adjustment(speed->adj, 1.0, 1.0, 0.25, 4.0, 0.1, CL_CONTINUOS);
+        speed->func.expose_callback = draw_knob;
+        speed->func.value_changed_callback = speed_callback;
 
         volume = add_knob(w, "dB",220,130,28,28);
         volume->parent_struct = (void*)this;
@@ -340,6 +381,9 @@ private:
     Widget_t *loopMark_R;
     Widget_t *paus;
     Widget_t *backset;
+    Widget_t *speed;
+    Widget_t *tuning;
+    Widget_t *fine_tuning;
     Widget_t *volume;
     Widget_t *backwards;
     Widget_t *lview;
@@ -1208,6 +1252,27 @@ private:
         Widget_t *w = (Widget_t*)w_;
         AudioLooperUi *self = static_cast<AudioLooperUi*>(w->parent_struct);
         self->gain = std::pow(1e+01, 0.05 * adj_get_value(w->adj));
+    }
+
+    // speed/timeRatio control
+    static void speed_callback(void *w_, void* user_data) {
+        Widget_t *w = (Widget_t*)w_;
+        AudioLooperUi *self = static_cast<AudioLooperUi*>(w->parent_struct);
+        self->timeRatio = adj_get_value(w->adj);        
+    }
+    
+    // tuning control
+    static void tuning_callback(void *w_, void* user_data) {
+        Widget_t *w = (Widget_t*)w_;
+        AudioLooperUi *self = static_cast<AudioLooperUi*>(w->parent_struct);
+        self->setPitchScale(adj_get_value(w->adj),adj_get_value(self->fine_tuning->adj));
+    }
+
+    // fine tuning control
+    static void fine_tuning_callback(void *w_, void* user_data) {
+        Widget_t *w = (Widget_t*)w_;
+        AudioLooperUi *self = static_cast<AudioLooperUi*>(w->parent_struct);
+        self->setPitchScale(adj_get_value(self->tuning->adj),adj_get_value(w->adj));
     }
 
 /****************************************************************
