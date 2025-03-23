@@ -76,7 +76,9 @@ static int process(const void* inputBuffer, void* outputBuffer,
     ui.rb->setTimeRatio(ui.timeRatio);
     ui.rb->setPitchScale(ui.pitchScale);
 
-    
+    uint32_t source_channel_count = min(ui.af.channels,MAX_RUBBERBAND_CHANNELS);
+    uint32_t ouput_channel_count = 2;
+        
     if (( ui.af.samplesize && ui.af.samples != nullptr) && ui.play && ui.ready) {
         float fSlow0 = 0.0010000000000000009 * ui.gain;
         uint32_t needed = frames;
@@ -86,8 +88,8 @@ static int process(const void* inputBuffer, void* outputBuffer,
                 size_t retrived_frames_count = ui.rb->retrieve(rubberband_output_buffers,min(available,min(needed,MAX_RUBBERBAND_BUFFER_FRAMES)));
                 for (size_t i = 0 ; i < retrived_frames_count ;i++){
                     fRec0[0] = fSlow0 + 0.999 * fRec0[1];
-                    for (uint32_t c = 0 ; c < min(ui.af.channels,MAX_RUBBERBAND_CHANNELS) ;c++){
-                        *out++ = rubberband_output_buffers[c][i] * fRec0[0];
+                    for (uint32_t c = 0 ; c < ouput_channel_count ;c++){
+                        *out++ = rubberband_output_buffers[c%source_channel_count][i] * fRec0[0];
                     }
                     fRec0[1] = fRec0[0];
                 }
@@ -101,7 +103,7 @@ static int process(const void* inputBuffer, void* outputBuffer,
                     }    
                     process_samples = min(ui.position - ui.loopPoint_l,MAX_RUBBERBAND_BUFFER_FRAMES);
                     for (int i = 0 ; i < process_samples ;i++){
-                        for (uint32_t c = 0 ; c < min(ui.af.channels,MAX_RUBBERBAND_CHANNELS) ;c++){
+                        for (uint32_t c = 0 ; c < source_channel_count ;c++){
                             rubberband_input_buffers[c][i] = ui.af.samples[ (ui.position - i) * ui.af.channels + c];
                         }
                     }
@@ -112,10 +114,9 @@ static int process(const void* inputBuffer, void* outputBuffer,
                         // TODO why is loadFile used at this point in original audio callback ????
                         // ui.loadFile(); 
                     }
-                   // could estimate what is needed instead of passing the whole buffer in worst case
                     process_samples = min(ui.loopPoint_r-ui.position,MAX_RUBBERBAND_BUFFER_FRAMES);
                     for (int i = 0 ; i < process_samples ;i++){
-                        for (uint32_t c = 0 ; c < min(ui.af.channels,MAX_RUBBERBAND_CHANNELS) ;c++){
+                        for (uint32_t c = 0 ; c < source_channel_count ;c++){
                             rubberband_input_buffers[c][i] = ui.af.samples[ (ui.position + i) * ui.af.channels + c];
                         }
                     }
