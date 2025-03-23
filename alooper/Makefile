@@ -69,11 +69,11 @@ endif
 
 ifeq ($(TARGET), Linux)
 	# set compile flags
-	CFLAGS += -I. -I./zita-resampler-1.1.0 -Wall -funroll-loops `pkg-config --cflags sndfile $(USEAPI)`\
+	CFLAGS += -I. -I./zita-resampler-1.1.0 -Wall -funroll-loops `pkg-config --cflags sndfile $(USEAPI) rubberband`\
 	-ffast-math -fomit-frame-pointer -fstrength-reduce -fdata-sections -Wl,--gc-sections \
 	-pthread $(SSE_CFLAGS)
 	CXXFLAGS += -MMD -std=c++20 -D_OS_UNIX_ -DALVER=\"$(VER)\" $(CFLAGS)
-	LDFLAGS += -I. -lm -pthread -lpthread `pkg-config --libs sndfile $(USEAPI)`
+	LDFLAGS += -I. -lm -pthread -lpthread `pkg-config --libs sndfile $(USEAPI) rubberband`
 	ifneq ($(MACOS)$(WINDOWS),true)
 		LDFLAGS += -lrt -lc
 	endif
@@ -101,7 +101,7 @@ endif
 ifeq ($(MAKECMDGOALS),jack)
 	OBJECTS = xjack.c
 else
-	OBJECTS = xpa.c
+	OBJECTS = xpa.c vs.c 
 endif
 	DEPS = alooper.d $(RESAMP_DIR)resampler.d  $(RESAMP_DIR)resampler_table.d
 
