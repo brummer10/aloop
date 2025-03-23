@@ -1,5 +1,20 @@
 #pragma once
+/*
+ * vs.h
+ *
+ * SPDX-License-Identifier:  BSD-3-Clause
+ *
+ * Copyright (C) 2024 rubberplayer
+ */
+
+
+
 #include <rubberband/RubberBandStretcher.h>
+
+#pragma once
+
+#ifndef VS_H
+#define VS_H
 
 #define MAX_RUBBERBAND_CHANNELS ((uint32_t)8)
 #define MAX_RUBBERBAND_BUFFER_FRAMES ((uint32_t)4096)
@@ -37,3 +52,5 @@ class Varispeed {
 // float *const *outputBuffers = reinterpret_cast<float *const *>(rubberband_output_buffers.get());
 //
 //
+
+#endif

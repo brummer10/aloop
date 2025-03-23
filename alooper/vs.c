@@ -1,3 +1,12 @@
+/*
+ * vs.c
+ *
+ * SPDX-License-Identifier:  BSD-3-Clause
+ *
+ * Copyright (C) 2024 rubberplayer
+ */
+
+
 #include "vs.h"
 
 float *const *allocate_desinterleaved_buffer(int channel_count, uint32_t sample_count) {

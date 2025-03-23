@@ -34,6 +34,7 @@ The GUI is created with libxputty.
 - portaudio19-dev
 - libcairo2-dev
 - libx11-dev
+- librubberband-dev
 
 ## Building from source code
 
