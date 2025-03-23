@@ -94,7 +94,7 @@ static int process(const void* inputBuffer, void* outputBuffer,
             if (needed>0){            
                 int process_samples;
                 if (ui.playBackwards){
-                    if (ui.position < ui.loopPoint_l) {
+                    if (ui.position <= ui.loopPoint_l) {
                         ui.position = ui.loopPoint_r;
                     }    
                     process_samples = min(ui.position - ui.loopPoint_l,MAX_RUBBERBAND_BUFFER_FRAMES);
@@ -105,8 +105,8 @@ static int process(const void* inputBuffer, void* outputBuffer,
                     }
                     ui.position -= process_samples;
                 } else {
-                    if (ui.position > ui.loopPoint_r) {
-                        ui.position = ui.loopPoint_l;                
+                    if (ui.position >= ui.loopPoint_r) {
+                        ui.position = ui.loopPoint_l;  
                         // TODO why is loadFile used at this point in original audio callback ????
                         // ui.loadFile(); 
                     }
