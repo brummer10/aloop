@@ -78,16 +78,18 @@ static int process(const void* inputBuffer, void* outputBuffer,
 
     
     if (( ui.af.samplesize && ui.af.samples != nullptr) && ui.play && ui.ready) {
-
+        float fSlow0 = 0.0010000000000000009 * ui.gain;
         uint32_t needed = frames;
         while (needed>0){
             size_t available = ui.rb->available();
             if (available > 0){
                 size_t retrived_frames_count = ui.rb->retrieve(rubberband_output_buffers,min(available,min(needed,MAX_RUBBERBAND_BUFFER_FRAMES)));
                 for (size_t i = 0 ; i < retrived_frames_count ;i++){
+                    fRec0[0] = fSlow0 + 0.999 * fRec0[1];
                     for (uint32_t c = 0 ; c < min(ui.af.channels,MAX_RUBBERBAND_CHANNELS) ;c++){
-                     *out++ = rubberband_output_buffers[c][i];
+                        *out++ = rubberband_output_buffers[c][i] * fRec0[0];
                     }
+                    fRec0[1] = fRec0[0];
                 }
                 needed -= retrived_frames_count;
             }
