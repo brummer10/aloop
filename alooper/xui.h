@@ -11,7 +11,6 @@
 #ifndef JACKAPI
 #include <portaudio.h>
 #endif
-#include <rubberband/RubberBandStretcher.h>
 #include <algorithm>
 #include <cctype>
 #include <condition_variable>
@@ -31,6 +30,7 @@
 #include "xwidgets.h"
 #include "xfile-dialog.h"
 #include "TextEntry.h"
+#include "vs.h"
 
 #pragma once
 
@@ -123,7 +123,7 @@ public:
     ParallelThread pa;
     ParallelThread pl;
     AudioFile af;
-    std::unique_ptr<RubberBand::RubberBandStretcher> rb;
+    Varispeed vs;
     
     uint32_t jack_sr;
     uint32_t position;
@@ -169,30 +169,25 @@ public:
 /****************************************************************
                       public function calls
 ****************************************************************/
+
+    // set pitch scale from tuning and fine_tuning
     void setPitchScale(float tuning, float fine_tuning){        
         pitchScale = pow(2.0f, (tuning + fine_tuning / 100.0f) / 12.0f);
-        // printf("tuning_callback: %f fine_tuning_callback: %f => %f \n",tuning,fine_tuning,pitchScale);
     }
+
     // stop background threads and quit main window
     void onExit() {
         pl.stop();
         pa.stop();
         quit(w);
     }
-    void intializeRubberband(){
-       RubberBand::RubberBandStretcher::Options rb_options = RubberBand::RubberBandStretcher::OptionProcessRealTime;
-       int fixedChannelCountButWhy = 2;
-       rb = std::make_unique<RubberBand::RubberBandStretcher>(jack_sr,fixedChannelCountButWhy, rb_options);
-       // fprintf(stderr, "[player] RubberBand init with (sr %d) (channels: %d) (options: %d)\n",jack_sr, fixedChannelCountButWhy, rb_options);
-       // fprintf(stderr, "[player] RubberBand engine version : %d\n", rb->getEngineVersion());
-       // fprintf(stderr, "[player] RubberBand channel count : %ld\n", rb->getChannelCount());
-    }
+    
     // receive Sample Rate from audio back-end
     void setJackSampleRate(uint32_t sr) {
         bool changed = jack_sr != sr        ;
         jack_sr = sr;        
         if (changed){
-            intializeRubberband();
+            vs.initialize(sr);
         }
     }
 

@@ -16,47 +16,12 @@
 #include <iostream>
 #include <string>
 #include <condition_variable>
-
 #include "ParallelThread.h"
+#include "vs.h"
 #include "xui.h"
 #include "xpa.h"
 
 AudioLooperUi ui;
-
-
-#define MAX_RUBBERBAND_CHANNELS ((uint32_t)8)
-#define MAX_RUBBERBAND_BUFFER_FRAMES ((uint32_t)4096)
-
-uint32_t position;
-
-float *const * rubberband_input_buffers;
-float *const * rubberband_output_buffers;
-
-float *const * allocate_desinterleaved_buffer(int channel_count, uint32_t sample_count){
-    float **channels = new float *[channel_count];
-    for (int i = 0; i < channel_count; ++i) {
-        channels[i] = new float[sample_count];        
-    }
-    return channels;
-}
-void free_desinterleaved_buffer(const float *const *buffer, int channel_count) {
-    float **channels = (float **)buffer;
-   for (int i = 0; i < channel_count; ++i) {
-        delete[] channels[i];
-    }
-    delete[] channels;
-}
-
-void allocate_rubberband_buffers(){
-    rubberband_input_buffers = /*(const float *const *)*/allocate_desinterleaved_buffer(MAX_RUBBERBAND_CHANNELS,MAX_RUBBERBAND_BUFFER_FRAMES);
-    rubberband_output_buffers = allocate_desinterleaved_buffer(MAX_RUBBERBAND_CHANNELS,MAX_RUBBERBAND_BUFFER_FRAMES);
-}
-
-void free_rubberband_buffers(){
-    free_desinterleaved_buffer(rubberband_input_buffers,MAX_RUBBERBAND_CHANNELS);
-    free_desinterleaved_buffer(rubberband_output_buffers,MAX_RUBBERBAND_CHANNELS);
- 
-}
 
 // the portaudio server process callback
 static int process(const void* inputBuffer, void* outputBuffer,
@@ -71,21 +36,24 @@ static int process(const void* inputBuffer, void* outputBuffer,
     (void) timeInfo;
     (void) statusFlags;
 
-    // TODO : put in init.
-    ui.rb->setMaxProcessSize(MAX_RUBBERBAND_BUFFER_FRAMES) ;   
-    ui.rb->setTimeRatio(ui.timeRatio);
-    ui.rb->setPitchScale(ui.pitchScale);
+    float *const *rubberband_input_buffers = ui.vs.rubberband_input_buffers;
+    float *const *rubberband_output_buffers = ui.vs.rubberband_output_buffers;
 
-    uint32_t source_channel_count = min(ui.af.channels,MAX_RUBBERBAND_CHANNELS);
+    
+
+    ui.vs.rb->setTimeRatio(ui.timeRatio);
+    ui.vs.rb->setPitchScale(ui.pitchScale);
+
+    uint32_t source_channel_count = min(ui.af.channels,ui.vs.rb->getChannelCount());
     uint32_t ouput_channel_count = 2;
         
     if (( ui.af.samplesize && ui.af.samples != nullptr) && ui.play && ui.ready) {
         float fSlow0 = 0.0010000000000000009 * ui.gain;
         uint32_t needed = frames;
         while (needed>0){
-            size_t available = ui.rb->available();
+            size_t available = ui.vs.rb->available();
             if (available > 0){
-                size_t retrived_frames_count = ui.rb->retrieve(rubberband_output_buffers,min(available,min(needed,MAX_RUBBERBAND_BUFFER_FRAMES)));
+                size_t retrived_frames_count = ui.vs.rb->retrieve(rubberband_output_buffers,min(available,min(needed,MAX_RUBBERBAND_BUFFER_FRAMES)));
                 for (size_t i = 0 ; i < retrived_frames_count ;i++){
                     fRec0[0] = fSlow0 + 0.999 * fRec0[1];
                     for (uint32_t c = 0 ; c < ouput_channel_count ;c++){
@@ -122,12 +90,12 @@ static int process(const void* inputBuffer, void* outputBuffer,
                     }
                     ui.position += process_samples;
                 }            
-                ui.rb->process( rubberband_input_buffers,process_samples,false);
+                ui.vs.rb->process( rubberband_input_buffers,process_samples,false);
                 
             }
         }
     } else {
-            ui.rb->reset();
+            ui.vs.rb->reset();
             memset(out, 0.0, (uint32_t)frames * 2 * sizeof(float));
     }
     
@@ -219,9 +187,6 @@ signal_handler (int sig)
 
 int main(int argc, char *argv[]){
 
-
-    allocate_rubberband_buffers();
-
     #if defined(__linux__) || defined(__FreeBSD__) || \
         defined(__NetBSD__) || defined(__OpenBSD__)
     if(0 == XInitThreads()) 
@@ -265,7 +230,6 @@ int main(int argc, char *argv[]){
     ui.pa.stop();
     main_quit(&app);
     xpa.stopStream();
-    free_rubberband_buffers();
     printf("bye bye\n");
     return 0;
 }

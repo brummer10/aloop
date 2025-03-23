@@ -101,7 +101,7 @@ endif
 ifeq ($(MAKECMDGOALS),jack)
 	OBJECTS = xjack.c
 else
-	OBJECTS = xpa.c
+	OBJECTS = xpa.c vs.c 
 endif
 	DEPS = alooper.d $(RESAMP_DIR)resampler.d  $(RESAMP_DIR)resampler_table.d
 
