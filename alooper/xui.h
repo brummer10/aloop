@@ -230,7 +230,7 @@ public:
     // create the main GUI
     void createGUI(Xputty *app, std::condition_variable *Sync_) {
         SyncWait =Sync_;
-        w_top = create_window(app, os_get_root_window(app, IS_WINDOW), 0, 0, 400, 170);
+        w_top = create_window(app, os_get_root_window(app, IS_WINDOW), 0, 0, 440, 170);
         widget_set_title(w_top, "alooper");
         widget_set_icon_from_png(w_top,LDVAR(alooper_png));
         #if defined(__linux__) || defined(__FreeBSD__) || \
@@ -241,7 +241,7 @@ public:
         w_top->func.dnd_notify_callback = dnd_load_response;
         w_top->func.key_press_callback = key_press;
 
-        w = create_widget(app, w_top, 0, 0, 400, 170);
+        w = create_widget(app, w_top, 0, 0, 440, 170);
         widget_set_icon_from_png(w,LDVAR(alooper_png));
         #if defined(__linux__) || defined(__FreeBSD__) || \
             defined(__NetBSD__) || defined(__OpenBSD__)
@@ -254,7 +254,7 @@ public:
         w->func.dnd_notify_callback = dnd_load_response;
         w->func.key_press_callback = key_press;
 
-        loopMark_L = add_hslider(w, "",15, 2, 185, 18);
+        loopMark_L = add_hslider(w, "",15, 2, 205, 18);
         loopMark_L->scale.gravity = EASTCENTER;
         loopMark_L->parent_struct = (void*)this;
         loopMark_L->adj_x = add_adjustment(loopMark_L,0.0, 0.0, 0.0, 1000.0,1.0, CL_CONTINUOS);
@@ -263,7 +263,7 @@ public:
         loopMark_L->func.button_release_callback = slider_l_released;
         loopMark_L->func.value_changed_callback = slider_l_changed_callback;
 
-        loopMark_R = add_hslider(w, "",200, 2, 185, 18);
+        loopMark_R = add_hslider(w, "",220, 2, 205, 18);
         loopMark_R->scale.gravity = WESTCENTER;
         loopMark_R->parent_struct = (void*)this;
         loopMark_R->adj_x = add_adjustment(loopMark_R,0.0, 0.0, -1000.0, 0.0,1.0, CL_CONTINUOS);
@@ -272,7 +272,7 @@ public:
         loopMark_R->func.button_release_callback = slider_r_released;
         loopMark_R->func.value_changed_callback = slider_r_changed_callback;
 
-        wview = add_waveview(w, "", 20, 20, 360, 100);
+        wview = add_waveview(w, "", 20, 20, 400, 100);
         wview->scale.gravity = NORTHWEST;
         wview->parent_struct = (void*)this;
         wview->adj_x = add_adjustment(wview,0.0, 0.0, 0.0, 1000.0,1.0, CL_METER);
@@ -285,77 +285,101 @@ public:
         expand->parent_struct = (void*)this;
         expand->scale.gravity = SOUTHEAST;
         widget_get_png(expand, LDVAR(expand_png));
+        expand->flags |= HAS_TOOLTIP;
+        add_tooltip(expand, "Show Playlist");
         expand->func.value_changed_callback = button_expand_callback;
 
         filebutton = add_file_button(w, 60, 130, 30, 30, getenv("HOME") ? getenv("HOME") : "/", "audio");
         filebutton->scale.gravity = SOUTHEAST;
         filebutton->parent_struct = (void*)this;
         widget_get_png(filebutton, LDVAR(dir_png));
+        filebutton->flags |= HAS_TOOLTIP;
+        add_tooltip(filebutton, "Load file");
         filebutton->func.user_callback = dialog_response;
 
         lview = add_image_toggle_button(w, "", 90, 130, 30, 30);
         lview->parent_struct = (void*)this;
         lview->scale.gravity = SOUTHEAST;
+        lview->flags |= HAS_TOOLTIP;
+        add_tooltip(lview, "Use Playlist");
         widget_get_png(lview, LDVAR(menu_png));
         lview->func.value_changed_callback = button_lview_callback;
 
         saveLoop = add_save_file_button(w, 120, 130, 30, 30, getenv("HOME") ? getenv("HOME") : "/", "audio");
         saveLoop->parent_struct = (void*)this;
         saveLoop->scale.gravity = SOUTHEAST;
+        saveLoop->flags |= HAS_TOOLTIP;
+        add_tooltip(saveLoop, "Save selected loop");
         widget_get_png(saveLoop, LDVAR(save__png));
         saveLoop->func.user_callback = write_soundfile;
        
-        tuning = add_knob(w, "tuning",120,130,28,28);
+        tuning = add_knob(w, "tuning",160,130,28,28);
         tuning->parent_struct = (void*)this;
         tuning->scale.gravity = SOUTHWEST;
+        tuning->flags |= HAS_TOOLTIP;
+        add_tooltip(tuning, "Pitch tuning");
         set_adjustment(tuning->adj, 0.0, 0.0, -12, 12, 1.0, CL_CONTINUOS);
         tuning->func.expose_callback = draw_knob;
         tuning->func.value_changed_callback = tuning_callback;
 
-        fine_tuning = add_knob(w, "fine tuning",150,130,28,28);
+        fine_tuning = add_knob(w, "fine tuning",195,130,28,28);
         fine_tuning->parent_struct = (void*)this;
         fine_tuning->scale.gravity = SOUTHWEST;
+        fine_tuning->flags |= HAS_TOOLTIP;
+        add_tooltip(fine_tuning, "Fine tuning");
         set_adjustment(fine_tuning->adj, 0.0, 0.0, -50, 50, 1.0, CL_CONTINUOS);
         fine_tuning->func.expose_callback = draw_knob;
         fine_tuning->func.value_changed_callback = fine_tuning_callback;
 
-        speed = add_knob(w, "speed",180,130,28,28);
+        speed = add_knob(w, "speed",230,130,28,28);
         speed->parent_struct = (void*)this;
         speed->scale.gravity = SOUTHWEST;
+        speed->flags |= HAS_TOOLTIP;
+        add_tooltip(speed, "Vari Speed");
         set_adjustment(speed->adj, 1.0, 1.0, 0.25, 4.0, 0.1, CL_CONTINUOS);
         speed->func.expose_callback = draw_knob;
         speed->func.value_changed_callback = speed_callback;
 
-        volume = add_knob(w, "dB",220,130,28,28);
+        volume = add_knob(w, "dB",265,130,28,28);
         volume->parent_struct = (void*)this;
         volume->scale.gravity = SOUTHWEST;
+        volume->flags |= HAS_TOOLTIP;
+        add_tooltip(volume, "Volume (dB)");
         set_adjustment(volume->adj, 0.0, 0.0, -20.0, 6.0, 0.1, CL_CONTINUOS);
         volume->func.expose_callback = draw_knob;
         volume->func.value_changed_callback = volume_callback;
 
-        backwards = add_image_toggle_button(w, "", 260, 130, 30, 30);
+        backwards = add_image_toggle_button(w, "", 300, 130, 30, 30);
         backwards->scale.gravity = SOUTHWEST;
         backwards->parent_struct = (void*)this;
         widget_get_png(backwards, LDVAR(backwards_png));
+        backwards->flags |= HAS_TOOLTIP;
+        add_tooltip(backwards, "Play backwards");
         backwards->func.value_changed_callback = button_backwards_callback;
 
-        backset = add_button(w, "", 290, 130, 30, 30);
+        backset = add_button(w, "", 330, 130, 30, 30);
         backset->parent_struct = (void*)this;
         backset->scale.gravity = SOUTHWEST;
         widget_get_png(backset, LDVAR(rewind_png));
+        backset->flags |= HAS_TOOLTIP;
+        add_tooltip(backset, "rewind Play-head");
         backset->func.value_changed_callback = button_backset_callback;
 
-        paus = add_image_toggle_button(w, "", 320, 130, 30, 30);
+        paus = add_image_toggle_button(w, "", 360, 130, 30, 30);
         paus->scale.gravity = SOUTHWEST;
         paus->parent_struct = (void*)this;
         widget_get_png(paus, LDVAR(pause_png));
+        paus->flags |= HAS_TOOLTIP;
+        add_tooltip(paus, "Have a break");
         paus->func.value_changed_callback = button_pause_callback;
 
-        w_quit = add_button(w, "", 350, 130, 30, 30);
+        w_quit = add_button(w, "", 390, 130, 30, 30);
         w_quit->parent_struct = (void*)this;
         widget_get_png(w_quit, LDVAR(exit__png));
         w_quit->scale.gravity = SOUTHWEST;
-        w_quit->func.value_changed_callback = button_quit_callback;
+        w_quit->flags |= HAS_TOOLTIP;
+        add_tooltip(w_quit, "Exit");
+         w_quit->func.value_changed_callback = button_quit_callback;
 
         widget_show_all(w_top);
 
@@ -420,7 +444,7 @@ private:
 
     // create the Play List window
     void createPlayListView(Xputty *app) {
-        viewPlayList = create_widget(app, w_top, 0, 170, 400, 340);
+        viewPlayList = create_widget(app, w_top, 0, 170, 440, 340);
         viewPlayList->flags |= HIDE_ON_DELETE;
         #if defined(__linux__) || defined(__FreeBSD__) || \
             defined(__NetBSD__) || defined(__OpenBSD__)
@@ -432,7 +456,7 @@ private:
         viewPlayList->func.expose_callback = draw_window;
         viewPlayList->func.dnd_notify_callback = dnd_load_playlist;
 
-        playList = add_listbox(viewPlayList, "", 20, 20, 360, 270);
+        playList = add_listbox(viewPlayList, "", 20, 20, 400, 270);
         playList->parent_struct = (void*)this;
         playList->scale.gravity = NORTHWEST;
         playList->func.user_paste_callback = listbox_move_callback;
@@ -449,19 +473,19 @@ private:
         savePlayList->scale.gravity = SOUTHEAST;
         savePlayList->func.value_changed_callback = save_callback;
 
-        upEntry = add_button(viewPlayList, "", 320, 300, 30, 30);
+        upEntry = add_button(viewPlayList, "", 360, 300, 30, 30);
         upEntry->parent_struct = (void*)this;
         widget_get_png(upEntry, LDVAR(up_png));
         upEntry->scale.gravity = SOUTHWEST;
         upEntry->func.value_changed_callback = up_entry_callback;
 
-        downEntry = add_button(viewPlayList, "", 350, 300, 30, 30);
+        downEntry = add_button(viewPlayList, "", 390, 300, 30, 30);
         downEntry->parent_struct = (void*)this;
         widget_get_png(downEntry, LDVAR(down_png));
         downEntry->scale.gravity = SOUTHWEST;
         downEntry->func.value_changed_callback = down_entry_callback;
 
-        deleteEntry = add_button(viewPlayList, "", 290, 300, 30, 30);
+        deleteEntry = add_button(viewPlayList, "", 330, 300, 30, 30);
         deleteEntry->parent_struct = (void*)this;
         widget_get_png(deleteEntry, LDVAR(quit_png));
         deleteEntry->scale.gravity = SOUTHWEST;
@@ -1253,7 +1277,7 @@ private:
     static void speed_callback(void *w_, void* user_data) {
         Widget_t *w = (Widget_t*)w_;
         AudioLooperUi *self = static_cast<AudioLooperUi*>(w->parent_struct);
-        self->timeRatio = adj_get_value(w->adj);        
+        self->timeRatio = adj_get_value(w->adj);
     }
     
     // tuning control

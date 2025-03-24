@@ -56,62 +56,45 @@ static int process(const void* inputBuffer, void* outputBuffer,
                     fRec0[0] = fSlow0 + 0.999 * fRec0[1];
                     for (uint32_t c = 0 ; c < ouput_channel_count ;c++){
                         *out++ = rubberband_output_buffers[c%source_channel_count][i] * fRec0[0];
-                        fRec0[1] = fRec0[0];
                     }
-                    // cross-fade over loop points 
-                    // ramp up on loop start point
-                    if (ui.playBackwards ?
-                        ui.position > ui.loopPoint_r - ramp_step :
-                        ui.position < ui.loopPoint_l + ramp_step) {
-                        if (ramp < ramp_step) {
-                            ++ramp;
-                        }
-                        const float fade = max(0.0,ramp) /ramp_step ;
-                        *(out - 2) *= fade;
-                        *(out - 1) *= fade;
-                    // ramp down on loop end point
-                    } else if (ui.playBackwards ?
-                                ui.position < ui.loopPoint_l + ramp_step :
-                                ui.position > ui.loopPoint_r - ramp_step) {
-                        if (ramp > 0.0) {
-                            --ramp; 
-                        }
-                        const float fade = max(0.0,ramp) /ramp_step ;
-                        *(out - 2) *= fade;
-                        *(out - 1) *= fade;
-                    }
+                    fRec0[1] = fRec0[0];
                 }
                 needed -= retrived_frames_count;
             }
-            if (needed>0){            
-                int process_samples;
-                if (ui.playBackwards){
-                    process_samples = min(frames, MAX_RUBBERBAND_BUFFER_FRAMES);
-                    for (int i = 0 ; i < process_samples ;i++){
-                        if (ui.position-i <= ui.loopPoint_l) {
-                            ui.position = ui.loopPoint_r;
-                            ui.loadFile(); 
-                        }    
-                        for (uint32_t c = 0 ; c < source_channel_count ;c++){
-                            rubberband_input_buffers[c][i] = ui.af.samples[ (ui.position - i) * ui.af.channels + c];
-                        }
+            if (needed>0){
+                int process_samples = min(frames, MAX_RUBBERBAND_BUFFER_FRAMES);
+                for (int i = 0 ; i < process_samples ;i++){
+                    ui.playBackwards ? --ui.position : ++ui.position;
+                    if (ui.playBackwards && ui.position <= ui.loopPoint_l) {
+                        ui.position = ui.loopPoint_r;
+                        ui.loadFile();
+                    } else if (!ui.playBackwards && ui.position >= ui.loopPoint_r) {
+                        ui.position = ui.loopPoint_l;
+                        ui.loadFile();
                     }
-                    ui.position -= process_samples;
-                } else {
-                    process_samples = min(frames, MAX_RUBBERBAND_BUFFER_FRAMES);
-                    for (int i = 0 ; i < process_samples ;i++){
-                        if (ui.position+i >= ui.loopPoint_r) {
-                            ui.position = ui.loopPoint_l;
-                            ui.loadFile(); 
-                        }
-                        for (uint32_t c = 0 ; c < source_channel_count ;c++){
-                            rubberband_input_buffers[c][i] = ui.af.samples[ (ui.position + i) * ui.af.channels + c];
-                        }
+                    for (uint32_t c = 0 ; c < source_channel_count ;c++){
+                        rubberband_input_buffers[c][i] = ui.af.samples[ (ui.position) * ui.af.channels + c];
                     }
-                    ui.position += process_samples;
-                }            
+                    // cross fade over loop points
+                    // ramp up on loop begin point
+                    if (ui.playBackwards ?
+                            ui.position > ui.loopPoint_r - ramp_step :
+                            ui.position < ui.loopPoint_l + ramp_step) {
+                        if (ramp < ramp_step) ++ramp;
+                        const float fade = max(0.0,ramp) /ramp_step ;
+                        rubberband_input_buffers[0][i] *= fade;
+                        rubberband_input_buffers[1][i] *= fade;
+                    // ramp down on loop end point
+                    } else if (ui.playBackwards ?
+                            ui.position < ui.loopPoint_l + ramp_step :
+                            ui.position > ui.loopPoint_r - ramp_step) {
+                        if (ramp > 0.0) --ramp;
+                        const float fade = max(0.0,ramp) /ramp_step ;
+                        rubberband_input_buffers[0][i] *= fade;
+                        rubberband_input_buffers[1][i] *= fade;
+                    }
+                }
                 ui.vs.rb->process( rubberband_input_buffers,process_samples,false);
-                
             }
         }
     } else {
