@@ -27,6 +27,9 @@ The GUI is created with libxputty.
 - endless looping
 - break playback (keyboard support space bar)
 - reset play-head to start position (keyboard support courser left)
+- varispeed
+- fine tuning
+- pitch shifting
 
 ## Dependencies
 
