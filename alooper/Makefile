@@ -101,7 +101,7 @@ endif
 ifeq ($(MAKECMDGOALS),jack)
 	OBJECTS = xjack.c
 else
-	OBJECTS = xpa.c vs.c 
+	OBJECTS = xpa.c vs.c
 endif
 	DEPS = alooper.d $(RESAMP_DIR)resampler.d  $(RESAMP_DIR)resampler_table.d
 
@@ -157,7 +157,7 @@ $(RESAMP_LIB): $(RESAMP_OBJ)
 	$(QUIET)$(AR) rcs $(RESAMP_LIB) $(RESAMP_OBJ)
 	@$(B_ECHO) "=================== DONE =======================$(reset)"
 
-$(NAME) : $(OBJECTS) $(RESAMP_LIB)
+$(NAME) : $(OBJECTS) $(RESAMP_LIB) xui.h
 	@$(B_ECHO) "Build $@ $(reset)"
 	$(QUIET)$(CXX) $(CXXFLAGS) $(OBJECTS) -L. $(RESAMP_LIB) -o $(NAME)$(EXE) $(LDFLAGS) $(GUI_LDFLAGS)
 ifneq ($(MAKECMDGOALS),debug)

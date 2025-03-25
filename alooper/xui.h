@@ -122,6 +122,7 @@ public:
     Widget_t *w;
     ParallelThread pa;
     ParallelThread pl;
+    ParallelThread pr;
     AudioFile af;
     Varispeed vs;
     
@@ -129,11 +130,19 @@ public:
     uint32_t position;
     uint32_t loopPoint_l;
     uint32_t loopPoint_r;
+    uint32_t frameSize;
+
     float gain;
     float timeRatio;
     float pitchScale;
+
+    float* audioBuffer;
+    std::atomic<bool>  getTimeOutTime;
+    std::condition_variable SyncWait;
+
     bool loadNew;
     bool play;
+    bool stop;
     bool ready;
     bool playBackwards;
 
@@ -142,6 +151,7 @@ public:
         position = 0;
         loopPoint_l = 0;
         loopPoint_r = 1000;
+        frameSize = 0;
         playNow = 0;
         gain = std::pow(1e+01, 0.05 * 0.0);
         timeRatio = 1.0;
@@ -150,20 +160,25 @@ public:
         is_loaded = false;
         loadNew = false;
         play = true;
+        stop = false;
         ready = true;
         usePlayList = false;
         forceReload = false;
         playBackwards = false;
+        audioBuffer = nullptr;
         blockWriteToPlayList = false;
         viewPlayList = nullptr;
         stream = nullptr;
         execute.store(true, std::memory_order_release);
+        getTimeOutTime.store(false, std::memory_order_release);
         plist.read_PlayList();
     };
 
     ~AudioLooperUi() {
         pl.stop();
         pa.stop();
+        pr.stop();
+        delete[] audioBuffer;
     };
 
 /****************************************************************
@@ -184,11 +199,13 @@ public:
     
     // receive Sample Rate from audio back-end
     void setJackSampleRate(uint32_t sr) {
-        bool changed = jack_sr != sr        ;
+        bool changed = jack_sr != sr;
         jack_sr = sr;        
         if (changed){
             vs.initialize(sr);
         }
+        audioBuffer = new float[MAX_RUBBERBAND_BUFFER_FRAMES * 2];
+        memset(audioBuffer, 0,MAX_RUBBERBAND_BUFFER_FRAMES * 2 * sizeof(float));
     }
 
     // receive stream object from portaudio to check 
@@ -228,8 +245,7 @@ public:
 ****************************************************************/
 
     // create the main GUI
-    void createGUI(Xputty *app, std::condition_variable *Sync_) {
-        SyncWait =Sync_;
+    void createGUI(Xputty *app) {
         w_top = create_window(app, os_get_root_window(app, IS_WINDOW), 0, 0, 440, 170);
         widget_set_title(w_top, "alooper");
         widget_set_icon_from_png(w_top,LDVAR(alooper_png));
@@ -240,6 +256,7 @@ public:
         w_top->parent_struct = (void*)this;
         w_top->func.dnd_notify_callback = dnd_load_response;
         w_top->func.key_press_callback = key_press;
+        os_set_window_min_size(w_top, 335, 85, 440, 170);
 
         w = create_widget(app, w_top, 0, 0, 440, 170);
         widget_set_icon_from_png(w,LDVAR(alooper_png));
@@ -289,7 +306,7 @@ public:
         add_tooltip(expand, "Show Playlist");
         expand->func.value_changed_callback = button_expand_callback;
 
-        filebutton = add_file_button(w, 60, 130, 30, 30, getenv("HOME") ? getenv("HOME") : "/", "audio");
+        filebutton = add_file_button(w, 55, 130, 30, 30, getenv("HOME") ? getenv("HOME") : "/", "audio");
         filebutton->scale.gravity = SOUTHEAST;
         filebutton->parent_struct = (void*)this;
         widget_get_png(filebutton, LDVAR(dir_png));
@@ -305,7 +322,7 @@ public:
         widget_get_png(lview, LDVAR(menu_png));
         lview->func.value_changed_callback = button_lview_callback;
 
-        saveLoop = add_save_file_button(w, 120, 130, 30, 30, getenv("HOME") ? getenv("HOME") : "/", "audio");
+        saveLoop = add_save_file_button(w, 125, 130, 30, 30, getenv("HOME") ? getenv("HOME") : "/", "audio");
         saveLoop->parent_struct = (void*)this;
         saveLoop->scale.gravity = SOUTHEAST;
         saveLoop->flags |= HAS_TOOLTIP;
@@ -317,7 +334,7 @@ public:
         tuning->parent_struct = (void*)this;
         tuning->scale.gravity = SOUTHWEST;
         tuning->flags |= HAS_TOOLTIP;
-        add_tooltip(tuning, "Pitch tuning");
+        add_tooltip(tuning, "Pitch shifting");
         set_adjustment(tuning->adj, 0.0, 0.0, -12, 12, 1.0, CL_CONTINUOS);
         tuning->func.expose_callback = draw_knob;
         tuning->func.value_changed_callback = tuning_callback;
@@ -389,6 +406,9 @@ public:
         pl.start();
         pl.set<AudioLooperUi, &AudioLooperUi::loadFromPlayList>(this);
 
+        pr.start();
+        pr.setPriority(25,1);
+        //pr.setTimeOut(120);
     }
 
 private:
@@ -425,7 +445,6 @@ private:
 
     PaStream* stream;
 
-    std::condition_variable *SyncWait;
     std::mutex WMutex;
 
     uint32_t playNow;
@@ -465,30 +484,40 @@ private:
         loadPlayList->parent_struct = (void*)this;
         widget_get_png(loadPlayList, LDVAR(load__png));
         loadPlayList->scale.gravity = SOUTHEAST;
+        loadPlayList->flags |= HAS_TOOLTIP;
+        add_tooltip(loadPlayList, "Load Playlist");
         loadPlayList->func.value_changed_callback = load_up_callback;
 
         savePlayList = add_button(viewPlayList, "", 50, 300, 30, 30);
         savePlayList->parent_struct = (void*)this;
         widget_get_png(savePlayList, LDVAR(save__png));
         savePlayList->scale.gravity = SOUTHEAST;
+        savePlayList->flags |= HAS_TOOLTIP;
+        add_tooltip(savePlayList, "Save Playlist");
         savePlayList->func.value_changed_callback = save_callback;
 
         upEntry = add_button(viewPlayList, "", 360, 300, 30, 30);
         upEntry->parent_struct = (void*)this;
         widget_get_png(upEntry, LDVAR(up_png));
         upEntry->scale.gravity = SOUTHWEST;
+        upEntry->flags |= HAS_TOOLTIP;
+        add_tooltip(upEntry, "Move selected file up");
         upEntry->func.value_changed_callback = up_entry_callback;
 
         downEntry = add_button(viewPlayList, "", 390, 300, 30, 30);
         downEntry->parent_struct = (void*)this;
         widget_get_png(downEntry, LDVAR(down_png));
         downEntry->scale.gravity = SOUTHWEST;
+        downEntry->flags |= HAS_TOOLTIP;
+        add_tooltip(downEntry, "Move selected file down");
         downEntry->func.value_changed_callback = down_entry_callback;
 
         deleteEntry = add_button(viewPlayList, "", 330, 300, 30, 30);
         deleteEntry->parent_struct = (void*)this;
         widget_get_png(deleteEntry, LDVAR(quit_png));
         deleteEntry->scale.gravity = SOUTHWEST;
+        deleteEntry->flags |= HAS_TOOLTIP;
+        add_tooltip(deleteEntry, "Remove selected file");
         deleteEntry->func.value_changed_callback = remove_entry_callback;
 
         LoadMenu = create_menu(loadPlayList,25);
@@ -839,7 +868,7 @@ private:
 
         if (Pa_IsStreamActive(stream)) {
             std::unique_lock<std::mutex> lk(WMutex);
-            SyncWait->wait_for(lk, std::chrono::milliseconds(60));
+            SyncWait.wait_for(lk, std::chrono::milliseconds(60));
         }
 
         ready = false;
@@ -861,7 +890,7 @@ private:
             position = 0;
             if (Pa_IsStreamActive(stream)) {
                 std::unique_lock<std::mutex> lk(WMutex);
-                SyncWait->wait_for(lk, std::chrono::milliseconds(60));
+                SyncWait.wait_for(lk, std::chrono::milliseconds(60));
             }
             ready = false;
             delete[] af.samples;
@@ -972,6 +1001,10 @@ private:
         XFlush(w->app->dpy);
         XUnlockDisplay(w->app->dpy);
         #endif
+        if (getTimeOutTime.load(std::memory_order_acquire)) {
+            pr.setTimeOut(max(100,static_cast<int>((frameSize/(jack_sr*0.000001))*0.1)));
+            getTimeOutTime.store(false, std::memory_order_release);
+        }
         wview->func.adj_callback = transparent_draw;
     }
 

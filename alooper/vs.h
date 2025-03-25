@@ -15,7 +15,7 @@
 #ifndef VS_H
 #define VS_H
 
-#define MAX_RUBBERBAND_CHANNELS ((uint32_t)8)
+#define MAX_RUBBERBAND_CHANNELS ((uint32_t)2)
 #define MAX_RUBBERBAND_BUFFER_FRAMES ((uint32_t)4096)
 
 class Varispeed {
