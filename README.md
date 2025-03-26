@@ -6,6 +6,7 @@
 
 aloop is a audio file looper for Linux using PortAudio as backend (jack, pulse, alsa), 
 libsndfile to load sound files and zita-resampler to resample the files when needed.
+For varispeed, fine tuning and pitch shifting it use librubberband.
 The GUI is created with libxputty.
 
 ## Features
