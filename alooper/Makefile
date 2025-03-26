@@ -98,11 +98,8 @@ endif
 
 
 	# invoke build files
-ifeq ($(MAKECMDGOALS),jack)
-	OBJECTS = xjack.c
-else
 	OBJECTS = xpa.c vs.c
-endif
+
 	DEPS = alooper.d $(RESAMP_DIR)resampler.d  $(RESAMP_DIR)resampler_table.d
 
 .PHONY : mod all clean install uninstall
@@ -113,8 +110,6 @@ all : check $(NAME)
 	@if ! [ -f ../bin/$(NAME)$(EXE) ]; then \
 		$(R_ECHO) "Sorry, build fail$(reset)"; \
 	fi
-
-jack : all
 
 debug : all
 

@@ -30,6 +30,7 @@ static void processBuffer() {
     static float fRec0[2] = {0};
     static float ramp = 0.0;
     static const float ramp_step = 256.0;
+    static const float ramp_impl = 1.0/ramp_step;
     float *const *rubberband_input_buffers = ui.vs.rubberband_input_buffers;
     float *const *rubberband_output_buffers = ui.vs.rubberband_output_buffers;
 
@@ -79,7 +80,7 @@ static void processBuffer() {
                             ui.position > ui.loopPoint_r - ramp_step :
                             ui.position < ui.loopPoint_l + ramp_step) {
                         if (ramp < ramp_step) ++ramp;
-                        const float fade = max(0.0,ramp) /ramp_step ;
+                        const float fade = max(0.0,ramp) * ramp_impl ;
                         rubberband_input_buffers[0][i] *= fade;
                         rubberband_input_buffers[1][i] *= fade;
                     // ramp down on loop end point - ramp_step
@@ -87,7 +88,7 @@ static void processBuffer() {
                             ui.position < ui.loopPoint_l + ramp_step :
                             ui.position > ui.loopPoint_r - ramp_step) {
                         if (ramp > 0.0) --ramp;
-                        const float fade = max(0.0,ramp) /ramp_step ;
+                        const float fade = max(0.0,ramp) * ramp_impl ;
                         rubberband_input_buffers[0][i] *= fade;
                         rubberband_input_buffers[1][i] *= fade;
                     }
@@ -113,6 +114,7 @@ static int process(const void* inputBuffer, void* outputBuffer,
     (void) timeInfo;
     (void) statusFlags;
     static const float ramp_step = 2048.0;
+    static const float ramp_impl = 1.0/ramp_step;
     static float ramp = ramp_step;
     static bool isDown = false;
 
@@ -137,7 +139,7 @@ static int process(const void* inputBuffer, void* outputBuffer,
                 uint32_t reset = ui.playBackwards ? 4096 : -4096;
                 ui.position += reset;
             }
-            const float fade = max(0.0,ramp) /ramp_step ;
+            const float fade = max(0.0,ramp) * ramp_impl;
             out[i] *= fade;
         }
     } else if (ui.play && isDown) {
@@ -149,7 +151,7 @@ static int process(const void* inputBuffer, void* outputBuffer,
                 isDown = false;
                 ramp = 0.0;
             }
-            const float fade = max(0.0,ramp) /ramp_step ;
+            const float fade = max(0.0,ramp) * ramp_impl;
             out[i] *= fade;
         }
     }

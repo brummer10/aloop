@@ -246,7 +246,7 @@ public:
 
     // create the main GUI
     void createGUI(Xputty *app) {
-        w_top = create_window(app, os_get_root_window(app, IS_WINDOW), 0, 0, 440, 170);
+        w_top = create_window(app, os_get_root_window(app, IS_WINDOW), 0, 0, 440, 190);
         widget_set_title(w_top, "alooper");
         widget_set_icon_from_png(w_top,LDVAR(alooper_png));
         #if defined(__linux__) || defined(__FreeBSD__) || \
@@ -256,9 +256,9 @@ public:
         w_top->parent_struct = (void*)this;
         w_top->func.dnd_notify_callback = dnd_load_response;
         w_top->func.key_press_callback = key_press;
-        os_set_window_min_size(w_top, 335, 85, 440, 170);
+        os_set_window_min_size(w_top, 335, 85, 440, 190);
 
-        w = create_widget(app, w_top, 0, 0, 440, 170);
+        w = create_widget(app, w_top, 0, 0, 440, 190);
         widget_set_icon_from_png(w,LDVAR(alooper_png));
         #if defined(__linux__) || defined(__FreeBSD__) || \
             defined(__NetBSD__) || defined(__OpenBSD__)
@@ -289,7 +289,7 @@ public:
         loopMark_R->func.button_release_callback = slider_r_released;
         loopMark_R->func.value_changed_callback = slider_r_changed_callback;
 
-        wview = add_waveview(w, "", 20, 20, 400, 100);
+        wview = add_waveview(w, "", 20, 20, 400, 120);
         wview->scale.gravity = NORTHWEST;
         wview->parent_struct = (void*)this;
         wview->adj_x = add_adjustment(wview,0.0, 0.0, 0.0, 1000.0,1.0, CL_METER);
@@ -298,7 +298,7 @@ public:
         wview->func.button_release_callback = set_playhead;
         wview->func.key_press_callback = key_press;
 
-        expand = add_image_toggle_button(w, "", 20, 130, 30, 30);
+        expand = add_image_toggle_button(w, "", 20, 150, 30, 30);
         expand->parent_struct = (void*)this;
         expand->scale.gravity = SOUTHEAST;
         widget_get_png(expand, LDVAR(expand_png));
@@ -306,7 +306,7 @@ public:
         add_tooltip(expand, "Show Playlist");
         expand->func.value_changed_callback = button_expand_callback;
 
-        filebutton = add_file_button(w, 55, 130, 30, 30, getenv("HOME") ? getenv("HOME") : "/", "audio");
+        filebutton = add_file_button(w, 55, 150, 30, 30, getenv("HOME") ? getenv("HOME") : "/", "audio");
         filebutton->scale.gravity = SOUTHEAST;
         filebutton->parent_struct = (void*)this;
         widget_get_png(filebutton, LDVAR(dir_png));
@@ -314,7 +314,7 @@ public:
         add_tooltip(filebutton, "Load file");
         filebutton->func.user_callback = dialog_response;
 
-        lview = add_image_toggle_button(w, "", 90, 130, 30, 30);
+        lview = add_image_toggle_button(w, "", 90, 150, 30, 30);
         lview->parent_struct = (void*)this;
         lview->scale.gravity = SOUTHEAST;
         lview->flags |= HAS_TOOLTIP;
@@ -322,7 +322,7 @@ public:
         widget_get_png(lview, LDVAR(menu_png));
         lview->func.value_changed_callback = button_lview_callback;
 
-        saveLoop = add_save_file_button(w, 125, 130, 30, 30, getenv("HOME") ? getenv("HOME") : "/", "audio");
+        saveLoop = add_save_file_button(w, 125, 150, 30, 30, getenv("HOME") ? getenv("HOME") : "/", "audio");
         saveLoop->parent_struct = (void*)this;
         saveLoop->scale.gravity = SOUTHEAST;
         saveLoop->flags |= HAS_TOOLTIP;
@@ -330,7 +330,7 @@ public:
         widget_get_png(saveLoop, LDVAR(save__png));
         saveLoop->func.user_callback = write_soundfile;
        
-        tuning = add_knob(w, "tuning",160,130,28,28);
+        tuning = add_knob(w, "tuning",160,150,28,28);
         tuning->parent_struct = (void*)this;
         tuning->scale.gravity = SOUTHWEST;
         tuning->flags |= HAS_TOOLTIP;
@@ -339,7 +339,7 @@ public:
         tuning->func.expose_callback = draw_knob;
         tuning->func.value_changed_callback = tuning_callback;
 
-        fine_tuning = add_knob(w, "fine tuning",195,130,28,28);
+        fine_tuning = add_knob(w, "fine tuning",195,150,28,28);
         fine_tuning->parent_struct = (void*)this;
         fine_tuning->scale.gravity = SOUTHWEST;
         fine_tuning->flags |= HAS_TOOLTIP;
@@ -348,16 +348,16 @@ public:
         fine_tuning->func.expose_callback = draw_knob;
         fine_tuning->func.value_changed_callback = fine_tuning_callback;
 
-        speed = add_knob(w, "speed",230,130,28,28);
+        speed = add_knob(w, "speed",230,150,28,28);
         speed->parent_struct = (void*)this;
         speed->scale.gravity = SOUTHWEST;
         speed->flags |= HAS_TOOLTIP;
         add_tooltip(speed, "Vari Speed");
-        set_adjustment(speed->adj, 1.0, 1.0, 0.25, 4.0, 0.1, CL_CONTINUOS);
+        set_adjustment(speed->adj, 1.0, 1.0, 0.25, 4.0, 0.01, CL_CONTINUOS);
         speed->func.expose_callback = draw_knob;
         speed->func.value_changed_callback = speed_callback;
 
-        volume = add_knob(w, "dB",265,130,28,28);
+        volume = add_knob(w, "dB",265,150,28,28);
         volume->parent_struct = (void*)this;
         volume->scale.gravity = SOUTHWEST;
         volume->flags |= HAS_TOOLTIP;
@@ -366,7 +366,7 @@ public:
         volume->func.expose_callback = draw_knob;
         volume->func.value_changed_callback = volume_callback;
 
-        backwards = add_image_toggle_button(w, "", 300, 130, 30, 30);
+        backwards = add_image_toggle_button(w, "", 300, 150, 30, 30);
         backwards->scale.gravity = SOUTHWEST;
         backwards->parent_struct = (void*)this;
         widget_get_png(backwards, LDVAR(backwards_png));
@@ -374,7 +374,7 @@ public:
         add_tooltip(backwards, "Play backwards");
         backwards->func.value_changed_callback = button_backwards_callback;
 
-        backset = add_button(w, "", 330, 130, 30, 30);
+        backset = add_button(w, "", 330, 150, 30, 30);
         backset->parent_struct = (void*)this;
         backset->scale.gravity = SOUTHWEST;
         widget_get_png(backset, LDVAR(rewind_png));
@@ -382,7 +382,7 @@ public:
         add_tooltip(backset, "rewind Play-head");
         backset->func.value_changed_callback = button_backset_callback;
 
-        paus = add_image_toggle_button(w, "", 360, 130, 30, 30);
+        paus = add_image_toggle_button(w, "", 360, 150, 30, 30);
         paus->scale.gravity = SOUTHWEST;
         paus->parent_struct = (void*)this;
         widget_get_png(paus, LDVAR(pause_png));
@@ -390,7 +390,7 @@ public:
         add_tooltip(paus, "Have a break");
         paus->func.value_changed_callback = button_pause_callback;
 
-        w_quit = add_button(w, "", 390, 130, 30, 30);
+        w_quit = add_button(w, "", 390, 150, 30, 30);
         w_quit->parent_struct = (void*)this;
         widget_get_png(w_quit, LDVAR(exit__png));
         w_quit->scale.gravity = SOUTHWEST;
@@ -463,7 +463,7 @@ private:
 
     // create the Play List window
     void createPlayListView(Xputty *app) {
-        viewPlayList = create_widget(app, w_top, 0, 170, 440, 340);
+        viewPlayList = create_widget(app, w_top, 0, 190, 440, 340);
         viewPlayList->flags |= HIDE_ON_DELETE;
         #if defined(__linux__) || defined(__FreeBSD__) || \
             defined(__NetBSD__) || defined(__OpenBSD__)
@@ -1106,7 +1106,7 @@ private:
                  os_get_root_window(w->app, IS_WIDGET), x1, y1, &x1, &y1);
             self->w_top->height += 340;
             self->w_top->scale.init_height +=340;
-            os_set_window_min_size(self->w_top, 200, 170 /2 + 340, self->w_top->width + x, self->w_top->height + y);
+            os_set_window_min_size(self->w_top, 335, 85 + 340, self->w_top->width + x, self->w_top->height + y);
             os_resize_window(self->w->app->dpy, self->w_top, self->w_top->width + x, self->w_top->height + y);
             os_move_window(self->w->app->dpy, self->w_top, x1, y1);
             widget_show_all(self->viewPlayList);
@@ -1126,7 +1126,7 @@ private:
                 os_get_root_window(w->app, IS_WIDGET), x1, y1, &x1, &y1);
             self->w_top->height -= 340;
             self->w_top->scale.init_height -= 340;
-            os_set_window_min_size(self->w_top, 200, 170/2, self->w_top->width + x , self->w_top->height + y);
+            os_set_window_min_size(self->w_top, 335, 85, self->w_top->width + x , self->w_top->height + y);
             os_resize_window(self->w->app->dpy, self->w_top, self->w_top->width + x , self->w_top->height + y);
             os_move_window(self->w->app->dpy, self->w_top, x1, y1);
             widget_hide(self->viewPlayList);
@@ -1430,7 +1430,10 @@ private:
         /** show value on the kob**/
         char s[64];
         float value = adj_get_value(w->adj);
-        snprintf(s, 63, "%.1f", value);
+        if (fabs(w->adj->step)>0.09)
+            snprintf(s, 63, "%.1f", value);
+        else
+            snprintf(s, 63, "%.2f", value);
         cairo_set_font_size (w->crb, (w->app->small_font-2)/w->scale.ascale);
         cairo_text_extents(w->crb, s, &extents);
         cairo_move_to (w->crb, knobx1-extents.width/2, knoby1+extents.height/2);
