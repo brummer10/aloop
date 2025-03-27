@@ -118,6 +118,12 @@ static int process(const void* inputBuffer, void* outputBuffer,
     static float ramp = ramp_step;
     static bool isDown = false;
 
+    if (ui.inSave.load(std::memory_order_acquire)) {
+        memset(out, 0.0, (uint32_t)frames * 2 * sizeof(float));
+        ui.SyncWait.notify_one();
+        return 0;
+    }
+
     if (ui.frameSize != static_cast<uint32_t>(frames)) {
         ui.frameSize = static_cast<uint32_t>(frames);
         ui.getTimeOutTime.store(true, std::memory_order_release);

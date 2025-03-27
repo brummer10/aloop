@@ -138,6 +138,7 @@ public:
 
     float* audioBuffer;
     std::atomic<bool>  getTimeOutTime;
+    std::atomic<bool>  inSave;
     std::condition_variable SyncWait;
 
     bool loadNew;
@@ -171,6 +172,7 @@ public:
         stream = nullptr;
         execute.store(true, std::memory_order_release);
         getTimeOutTime.store(false, std::memory_order_release);
+        inSave.store(false, std::memory_order_release);
         plist.read_PlayList();
     };
 
@@ -831,6 +833,57 @@ private:
                     save Sound File
 ****************************************************************/
 
+    // process loop and save processed data to file
+    void processSaveBuffer(std::string lname) {
+        inSave.store(true, std::memory_order_release);
+        uint32_t saveSize = loopPoint_r - loopPoint_l;
+        af.saveBuffer = new float[saveSize*2];
+        memset(af.saveBuffer, 0, saveSize*2*sizeof(float));
+        float* out = af.saveBuffer;
+        static float fRec0[2] = {0};
+        float *const *rubberband_input_buffers = vs.rubberband_input_buffers;
+        float *const *rubberband_output_buffers = vs.rubberband_output_buffers;
+        vs.rb->reset();
+        vs.rb->setTimeRatio(timeRatio);
+        vs.rb->setPitchScale(pitchScale);
+        uint32_t source_channel_count = min(af.channels,vs.rb->getChannelCount());
+        uint32_t ouput_channel_count = 2;
+        uint32_t needed = saveSize;
+        uint32_t processed = loopPoint_l;
+        float fSlow0 = 0.0010000000000000009 * gain;
+        while (needed>0){
+            size_t available = vs.rb->available();
+            if (available > 0){
+                size_t retrived_frames_count = vs.rb->retrieve(rubberband_output_buffers,min(available,min(needed,MAX_RUBBERBAND_BUFFER_FRAMES)));
+                for (size_t i = 0 ; i < retrived_frames_count ;i++){
+                    fRec0[0] = fSlow0 + 0.999 * fRec0[1];
+                    for (uint32_t c = 0 ; c < ouput_channel_count ;c++){
+                        *out++ = rubberband_output_buffers[c%source_channel_count][i] * fRec0[0];
+                    }
+                    fRec0[1] = fRec0[0];
+                }
+                needed -= retrived_frames_count;
+            }
+            if (needed>0){
+                int process_samples = min(needed, MAX_RUBBERBAND_BUFFER_FRAMES);
+                for (int i = 0 ; i < process_samples ;i++){
+                    processed++;
+                    // copy (de-interleaved)source to rubberband buffers
+                    for (uint32_t c = 0 ; c < source_channel_count ;c++){
+                        rubberband_input_buffers[c][i] = af.samples[(processed * af.channels) + c];
+                    }
+                }
+                // process source with rubberband stretcher
+                vs.rb->process( rubberband_input_buffers,process_samples,false);
+            }
+        }
+        af.saveProcessedAudioFile(lname, saveSize, jack_sr);
+        vs.rb->reset();
+        inSave.store(false, std::memory_order_release);
+        delete[] af.saveBuffer;
+        af.saveBuffer = nullptr;
+    }
+
     // save a loop to file
     static void write_soundfile(void *w_, void* user_data) {
         Widget_t *w = (Widget_t*)w_;
@@ -838,7 +891,8 @@ private:
             AudioLooperUi *self = static_cast<AudioLooperUi*>(w->parent_struct);
             if (!self->af.samples) return;
             std::string lname(*(const char**)user_data);
-            self->af.saveAudioFile(lname, self->loopPoint_l, self->loopPoint_r, self->jack_sr);
+            self->processSaveBuffer(lname);
+            //self->af.saveAudioFile(lname, self->loopPoint_l, self->loopPoint_r, self->jack_sr);
         }
     }
 

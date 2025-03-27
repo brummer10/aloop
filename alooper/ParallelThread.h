@@ -334,7 +334,7 @@ private:
         });    
     }
 
-    // run the thread, wait for signal and process the given function
+    // run the thread, process the given function frequently at timeout
     inline void runTimeout() noexcept {
         if( pRun.load(std::memory_order_acquire) ) {
             stop();
