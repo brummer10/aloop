@@ -861,13 +861,14 @@ private:
                 size_t retrived_frames_count = vs.rb->retrieve(rubberband_output_buffers,min(available,min(needed,MAX_RUBBERBAND_BUFFER_FRAMES)));
                 if (!needed) retrived_frames_count = vs.rb->retrieve(rubberband_output_buffers,min(available,MAX_RUBBERBAND_BUFFER_FRAMES));
                 for (size_t i = 0 ; i < retrived_frames_count ;i++){
+                    if (offset > 0) {
+                        offset--;
+                        continue;
+                    }
                     fRec0[0] = fSlow0 + 0.999 * fRec0[1];
                     for (uint32_t c = 0 ; c < source_channel_count ;c++){
-                        if (offset > 0) offset--;
-                        else {
-                            *out++ = rubberband_output_buffers[c%source_channel_count][i] * fRec0[0];
-                            outSize++;
-                        }
+                        *out++ = rubberband_output_buffers[c%source_channel_count][i] * fRec0[0];
+                        outSize++;
                     }
                     fRec0[1] = fRec0[0];
                 }
