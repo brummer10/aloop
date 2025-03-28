@@ -104,7 +104,7 @@ public:
     // save a processed audio buffer to file
     void saveProcessedAudioFile(std::string name, uint32_t sizeToSave, uint32_t SampleRate) {
         SF_INFO sfinfo ;
-        sfinfo.channels = 2;
+        sfinfo.channels = channels;
         sfinfo.samplerate = SampleRate;
         sfinfo.format = SF_FORMAT_WAV | SF_FORMAT_FLOAT;
         SNDFILE * sf = sf_open(name.c_str(), SFM_WRITE, &sfinfo);

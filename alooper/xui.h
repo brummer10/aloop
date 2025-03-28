@@ -837,8 +837,8 @@ private:
     void processSaveBuffer(std::string lname) {
         inSave.store(true, std::memory_order_release);
         uint32_t saveSize = loopPoint_r - loopPoint_l;
-        af.saveBuffer = new float[saveSize*2];
-        memset(af.saveBuffer, 0, saveSize*2*sizeof(float));
+        af.saveBuffer = new float[(int)(saveSize*timeRatio)*af.channels +2];
+        memset(af.saveBuffer, 0, 2+ (int)(saveSize*timeRatio)*af.channels*sizeof(float));
         float* out = af.saveBuffer;
         static float fRec0[2] = {0};
         float *const *rubberband_input_buffers = vs.rubberband_input_buffers;
@@ -846,23 +846,31 @@ private:
         vs.rb->reset();
         vs.rb->setTimeRatio(timeRatio);
         vs.rb->setPitchScale(pitchScale);
+        vs.rb->process( rubberband_input_buffers,MAX_RUBBERBAND_BUFFER_FRAMES,false);
+        uint32_t offset = vs.rb->getPreferredStartPad();
         uint32_t source_channel_count = min(af.channels,vs.rb->getChannelCount());
-        uint32_t ouput_channel_count = 2;
         uint32_t needed = saveSize;
         uint32_t processed = loopPoint_l;
+        uint32_t outSize = 0;
+        size_t run = 1;
         float fSlow0 = 0.0010000000000000009 * gain;
-        while (needed>0){
+        while (run>0){
             size_t available = vs.rb->available();
+            run = available;
             if (available > 0){
                 size_t retrived_frames_count = vs.rb->retrieve(rubberband_output_buffers,min(available,min(needed,MAX_RUBBERBAND_BUFFER_FRAMES)));
+                if (!needed) retrived_frames_count = vs.rb->retrieve(rubberband_output_buffers,min(available,MAX_RUBBERBAND_BUFFER_FRAMES));
                 for (size_t i = 0 ; i < retrived_frames_count ;i++){
                     fRec0[0] = fSlow0 + 0.999 * fRec0[1];
-                    for (uint32_t c = 0 ; c < ouput_channel_count ;c++){
-                        *out++ = rubberband_output_buffers[c%source_channel_count][i] * fRec0[0];
+                    for (uint32_t c = 0 ; c < source_channel_count ;c++){
+                        if (offset > 0) offset--;
+                        else {
+                            *out++ = rubberband_output_buffers[c%source_channel_count][i] * fRec0[0];
+                            outSize++;
+                        }
                     }
                     fRec0[1] = fRec0[0];
                 }
-                needed -= retrived_frames_count;
             }
             if (needed>0){
                 int process_samples = min(needed, MAX_RUBBERBAND_BUFFER_FRAMES);
@@ -873,11 +881,12 @@ private:
                         rubberband_input_buffers[c][i] = af.samples[(processed * af.channels) + c];
                     }
                 }
+                needed -= process_samples;
                 // process source with rubberband stretcher
                 vs.rb->process( rubberband_input_buffers,process_samples,false);
             }
         }
-        af.saveProcessedAudioFile(lname, saveSize, jack_sr);
+        af.saveProcessedAudioFile(lname, outSize, jack_sr);
         vs.rb->reset();
         inSave.store(false, std::memory_order_release);
         delete[] af.saveBuffer;

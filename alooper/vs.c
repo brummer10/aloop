@@ -34,8 +34,7 @@ Varispeed::~Varispeed() {
     free_desinterleaved_buffer(rubberband_output_buffers, MAX_RUBBERBAND_CHANNELS);
 }
 void Varispeed::initialize(uint32_t sr) {
-    RubberBand::RubberBandStretcher::Options rb_options = RubberBand::RubberBandStretcher::OptionProcessRealTime |
-        RubberBand::RubberBandStretcher::OptionEngineFiner;
+    RubberBand::RubberBandStretcher::Options rb_options = RubberBand::RubberBandStretcher::OptionProcessRealTime ;
     int stereo_channel_count = 2;
     rb = std::make_unique<RubberBand::RubberBandStretcher>(sr, stereo_channel_count, rb_options);
     rb->setMaxProcessSize(MAX_RUBBERBAND_BUFFER_FRAMES);
