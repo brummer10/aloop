@@ -847,7 +847,7 @@ private:
         vs.rb->setTimeRatio(timeRatio);
         vs.rb->setPitchScale(pitchScale);
         vs.rb->process( rubberband_input_buffers,MAX_RUBBERBAND_BUFFER_FRAMES,false);
-        uint32_t offset = vs.rb->getPreferredStartPad();
+        uint32_t offset = vs.rb->getPreferredStartPad()+1;
         uint32_t source_channel_count = min(af.channels,vs.rb->getChannelCount());
         uint32_t needed = saveSize;
         uint32_t processed = loopPoint_l;
