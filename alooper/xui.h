@@ -855,6 +855,8 @@ private:
         size_t run = 1;
         float fSlow0 = 0.0010000000000000009 * gain;
         while (run>0){
+            vs.rb->setTimeRatio(timeRatio);
+            vs.rb->setPitchScale(pitchScale);
             size_t available = vs.rb->available();
             run = available;
             if (available > 0){
@@ -868,8 +870,8 @@ private:
                     fRec0[0] = fSlow0 + 0.999 * fRec0[1];
                     for (uint32_t c = 0 ; c < source_channel_count ;c++){
                         *out++ = rubberband_output_buffers[c%source_channel_count][i] * fRec0[0];
-                        outSize++;
                     }
+                    outSize++;
                     fRec0[1] = fRec0[0];
                 }
             }
