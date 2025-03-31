@@ -273,22 +273,24 @@ public:
         w->func.dnd_notify_callback = dnd_load_response;
         w->func.key_press_callback = key_press;
 
-        loopMark_L = add_hslider(w, "",15, 2, 205, 18);
-        loopMark_L->scale.gravity = EASTCENTER;
+        loopMark_L = add_hslider(w, "",15, 2, 18, 18);
+        loopMark_L->scale.gravity = NONE;
         loopMark_L->parent_struct = (void*)this;
-        loopMark_L->adj_x = add_adjustment(loopMark_L,0.0, 0.0, 0.0, 1000.0,1.0, CL_CONTINUOS);
+        loopMark_L->adj_x = add_adjustment(loopMark_L,0.0, 0.0, 0.0, 1000.0,1.0, CL_METER);
         loopMark_L->adj = loopMark_L->adj_x;
         loopMark_L->func.expose_callback = draw_l_slider;
         loopMark_L->func.button_release_callback = slider_l_released;
+        loopMark_L->func.motion_callback = move_loopMark_L;
         loopMark_L->func.value_changed_callback = slider_l_changed_callback;
 
-        loopMark_R = add_hslider(w, "",220, 2, 205, 18);
-        loopMark_R->scale.gravity = WESTCENTER;
+        loopMark_R = add_hslider(w, "",415, 2, 18, 18);
+        loopMark_R->scale.gravity = WESTNORTH;
         loopMark_R->parent_struct = (void*)this;
-        loopMark_R->adj_x = add_adjustment(loopMark_R,0.0, 0.0, -1000.0, 0.0,1.0, CL_CONTINUOS);
+        loopMark_R->adj_x = add_adjustment(loopMark_R,0.0, 0.0, -1000.0, 0.0,1.0, CL_METER);
         loopMark_R->adj = loopMark_R->adj_x;
         loopMark_R->func.expose_callback = draw_r_slider;
         loopMark_R->func.button_release_callback = slider_r_released;
+        loopMark_R->func.motion_callback = move_loopMark_R;
         loopMark_R->func.value_changed_callback = slider_r_changed_callback;
 
         wview = add_waveview(w, "", 20, 20, 400, 120);
@@ -324,12 +326,11 @@ public:
         widget_get_png(lview, LDVAR(menu_png));
         lview->func.value_changed_callback = button_lview_callback;
 
-        saveLoop = add_save_file_button(w, 125, 150, 30, 30, getenv("HOME") ? getenv("HOME") : "/", "audio");
+        saveLoop = add_xsave_file_button(w, 125, 150, 30, 30, getenv("HOME") ? getenv("HOME") : "/", "audio");
         saveLoop->parent_struct = (void*)this;
         saveLoop->scale.gravity = SOUTHEAST;
         saveLoop->flags |= HAS_TOOLTIP;
         add_tooltip(saveLoop, "Save selected loop");
-        widget_get_png(saveLoop, LDVAR(save__png));
         saveLoop->func.user_callback = write_soundfile;
        
         tuning = add_knob(w, "tuning",160,150,28,28);
@@ -847,7 +848,7 @@ private:
         vs.rb->setTimeRatio(timeRatio);
         vs.rb->setPitchScale(pitchScale);
         vs.rb->process( rubberband_input_buffers,MAX_RUBBERBAND_BUFFER_FRAMES,false);
-        uint32_t offset = vs.rb->getPreferredStartPad()+1;
+        uint32_t offset = vs.rb->getPreferredStartPad()+2;
         uint32_t source_channel_count = min(af.channels,vs.rb->getChannelCount());
         uint32_t needed = saveSize;
         uint32_t processed = loopPoint_l;
@@ -1087,6 +1088,75 @@ private:
         }
     }
 
+    static void fxdialog_response(void *w_, void* user_data) {
+        Widget_t *w = (Widget_t*)w_;
+        FileButton *filebutton = (FileButton *)w->private_struct;
+        AudioLooperUi *self = static_cast<AudioLooperUi*>(w->parent_struct);
+        self->play = false;
+        if(user_data !=NULL) {
+            char *tmp = strdup(*(const char**)user_data);
+            free(filebutton->last_path);
+            filebutton->last_path = NULL;
+            filebutton->last_path = strdup(dirname(tmp));
+            filebutton->path = filebutton->last_path;
+            free(tmp);
+        }
+        w->func.user_callback(w,user_data);
+        filebutton->is_active = false;
+        adj_set_value(w->adj,0.0);
+        if (!adj_get_value(self->paus->adj))
+             self->play = true;
+    }
+
+    static void fxbutton_callback(void *w_, void* user_data) {
+        Widget_t *w = (Widget_t*)w_;
+        FileButton *filebutton = (FileButton *)w->private_struct;
+        if (w->flags & HAS_POINTER && adj_get_value(w->adj)){
+            filebutton->w = save_file_dialog(w,filebutton->path,filebutton->filter);
+    #ifdef _OS_UNIX_
+            Atom wmStateAbove = XInternAtom(w->app->dpy, "_NET_WM_STATE_ABOVE", 1 );
+            Atom wmNetWmState = XInternAtom(w->app->dpy, "_NET_WM_STATE", 1 );
+            XChangeProperty(w->app->dpy, filebutton->w->widget, wmNetWmState, XA_ATOM, 32, 
+                PropModeReplace, (unsigned char *) &wmStateAbove, 1); 
+    #elif defined _WIN32
+            os_set_transient_for_hint(w, filebutton->w);
+    #endif
+            filebutton->is_active = true;
+        } else if (w->flags & HAS_POINTER && !adj_get_value(w->adj)){
+            if(filebutton->is_active)
+                destroy_widget(filebutton->w,w->app);
+        }
+    }
+
+    static void fxbutton_mem_free(void *w_, void* user_data) {
+        Widget_t *w = (Widget_t*)w_;
+        FileButton *filebutton = (FileButton *)w->private_struct;
+        free(filebutton->last_path);
+        filebutton->last_path = NULL;
+        free(filebutton);
+        filebutton = NULL;
+    }
+
+    Widget_t *add_xsave_file_button(Widget_t *parent, int x, int y, int width, int height,
+                               const char *path, const char *filter) {
+        FileButton *filebutton = (FileButton*)malloc(sizeof(FileButton));
+        filebutton->path = path;
+        filebutton->filter = filter;
+        filebutton->last_path = NULL;
+        filebutton->w = NULL;
+        filebutton->is_active = false;
+        Widget_t *fbutton = add_image_toggle_button(parent, "", x, y, width, height);
+        fbutton->private_struct = filebutton;
+        fbutton->flags |= HAS_MEM;
+        widget_get_png(fbutton, LDVAR(save__png));
+        fbutton->scale.gravity = CENTER;
+        fbutton->func.mem_free_callback = fxbutton_mem_free;
+        fbutton->func.value_changed_callback = fxbutton_callback;
+        fbutton->func.dialog_callback = fxdialog_response;
+        return fbutton;
+    }
+
+
     #if defined(_WIN32)
     void getWindowDecorationSize(int *width, int *height) {
         DWORD dwStyle = WS_OVERLAPPEDWINDOW;
@@ -1206,7 +1276,7 @@ private:
     static void button_pause_callback(void *w_, void* user_data) {
         Widget_t *w = (Widget_t*)w_;
         AudioLooperUi *self = static_cast<AudioLooperUi*>(w->parent_struct);
-        if ((w->flags & HAS_POINTER) && adj_get_value(w->adj)){
+        if (adj_get_value(w->adj)){
             self->play = false;
         } else self->play = true;
     }
@@ -1229,17 +1299,19 @@ private:
         }
     }
 
-    // set left loop point by mouse move/scroll
+    // set left loop point by value change
     static void slider_l_changed_callback(void *w_, void* user_data) {
         Widget_t *w = (Widget_t*)w_;
         AudioLooperUi *self = static_cast<AudioLooperUi*>(w->parent_struct);
         float st = adj_get_state(w->adj);
-        uint32_t lp = (self->af.samplesize *0.5) * st;
+        uint32_t lp = (self->af.samplesize) * st;
         if (lp > self->position) {
             lp = self->position;
-            st = max(0.0, min(1.0, self->position/(self->af.samplesize*0.5)));
+            st = max(0.0, min(1.0, (float)((float)self->position/(float)self->af.samplesize)));
         }
         adj_set_state(w->adj, st);
+        int width = self->w_top->width-40;
+        os_move_window(self->w->app->dpy, w, 15+ (width * st), 2);
         self->loopPoint_l = lp;
         if (!self->plist.Play_list.size()) return;
         if (w->flags & HAS_POINTER && !self->blockWriteToPlayList) {
@@ -1247,43 +1319,52 @@ private:
         }
     }
 
-    // set left loop point by mouse right click
+    // set left loop point by mouse wheel
     static void slider_l_released(void *w_, void* xbutton_, void* user_data) {
         Widget_t *w = (Widget_t*)w_;
-        AudioLooperUi *self = static_cast<AudioLooperUi*>(w->parent_struct);
         XButtonEvent *xbutton = (XButtonEvent*)xbutton_;
         if (w->flags & HAS_POINTER) {
-            if(xbutton->state & Button3Mask) {
-                Metrics_t metrics;
-                os_get_window_metrics(w, &metrics);
-                int width = metrics.width;
-                int x = xbutton->x;
-                float st = max(0.0, min(1.0, static_cast<float>((float)x/(float)width)));
-                uint32_t lp = (self->af.samplesize *0.5) * st;
-                if (lp > self->position) {
-                    lp = self->position;
-                    st = max(0.0, min(1.0, self->position/(self->af.samplesize*0.5)));
-                }
-                adj_set_state(w->adj, st);
-                self->loopPoint_l = lp;
-                if (!self->plist.Play_list.size()) return;
-                std::get<2>(*(self->plist.Play_list.begin()+self->playNow)) = self->loopPoint_l;
+            if(xbutton->button == Button4) {
+                adj_set_value(w->adj, adj_get_value(w->adj) + 1.0);
+            } else if(xbutton->button == Button5) {
+                adj_set_value(w->adj, adj_get_value(w->adj) - 1.0);
             }
         }
         expose_widget(w);
     }
 
-    // set right loop point by mouse move/scroll
+    // move left loop point following the mouse pointer
+    static void move_loopMark_L(void *w_, void *xmotion_, void* user_data) {
+        Widget_t *w = (Widget_t*)w_;
+        XMotionEvent *xmotion = (XMotionEvent*)xmotion_;
+        AudioLooperUi *self = static_cast<AudioLooperUi*>(w->parent_struct);
+        Widget_t *p = (Widget_t*)w->parent;
+        int x1, y1;
+        os_translate_coords(w, w->widget, p->widget, xmotion->x, 0, &x1, &y1);
+        int width = self->w_top->width-40;
+        int pos = max(15, min (width+15,x1-5));
+        float st =  (float)( (float)(pos-15.0)/(float)width);
+        uint32_t lp = (self->af.samplesize) * st;
+        if (lp > self->position) {
+            lp = self->position;
+            st = max(0.0, min(1.0, (float)((float)self->position/(float)self->af.samplesize)));
+        }
+        adj_set_state(w->adj, st);
+    }
+
+    // set right loop point by value changes
     static void slider_r_changed_callback(void *w_, void* user_data) {
         Widget_t *w = (Widget_t*)w_;
         AudioLooperUi *self = static_cast<AudioLooperUi*>(w->parent_struct);
         float st = adj_get_state(w->adj);
-        uint32_t lp = (self->af.samplesize *0.5) + ((self->af.samplesize*0.5) * st);
+        uint32_t lp = (self->af.samplesize * st);
         if (lp < self->position) {
             lp = self->position;
-            st = max(0.0, min(1.0, (self->position - (self->af.samplesize*0.5))/(self->af.samplesize*0.5)));
+            st = max(0.0, min(1.0, (float)((float)self->position/(float)self->af.samplesize)));
         }
         adj_set_state(w->adj, st);
+        int width = self->w_top->width-40;
+        os_move_window(self->w->app->dpy, w, 15 + (width * st), 2);
         self->loopPoint_r = lp;
         if (!self->plist.Play_list.size()) return;
         if (w->flags & HAS_POINTER && !self->blockWriteToPlayList) {
@@ -1291,30 +1372,37 @@ private:
         }
     }
 
-    // set right loop point by mouse right click
+    // set right loop point by mouse wheel
     static void slider_r_released(void *w_, void* xbutton_, void* user_data) {
         Widget_t *w = (Widget_t*)w_;
-        AudioLooperUi *self = static_cast<AudioLooperUi*>(w->parent_struct);
         XButtonEvent *xbutton = (XButtonEvent*)xbutton_;
         if (w->flags & HAS_POINTER) {
-            if(xbutton->state & Button3Mask) {
-                Metrics_t metrics;
-                os_get_window_metrics(w, &metrics);
-                int width = metrics.width;
-                int x = xbutton->x;
-                float st = max(0.0, min(1.0, static_cast<float>((float)x/(float)width)));
-                uint32_t lp = (self->af.samplesize *0.5) + ((self->af.samplesize*0.5) * st);
-                if (lp < self->position) {
-                    lp = self->position;
-                    st = max(0.0, min(1.0, (self->position - (self->af.samplesize*0.5))/(self->af.samplesize*0.5)));
-                }
-                adj_set_state(w->adj, st);
-                self->loopPoint_r = lp;
-                if (!self->plist.Play_list.size()) return;
-                std::get<3>(*(self->plist.Play_list.begin()+self->playNow)) = self->loopPoint_r;
+            if(xbutton->button == Button4) {
+                adj_set_value(w->adj, adj_get_value(w->adj) - 1.0);
+            } else if(xbutton->button == Button5) {
+                adj_set_value(w->adj, adj_get_value(w->adj) + 1.0);
             }
         }
         expose_widget(w);
+    }
+
+    // move right loop point following the mouse pointer
+    static void move_loopMark_R(void *w_, void *xmotion_, void* user_data) {
+        Widget_t *w = (Widget_t*)w_;
+        XMotionEvent *xmotion = (XMotionEvent*)xmotion_;
+        AudioLooperUi *self = static_cast<AudioLooperUi*>(w->parent_struct);
+        Widget_t *p = (Widget_t*)w->parent;
+        int x1, y1;
+        os_translate_coords(w, w->widget, p->widget, xmotion->x, 0, &x1, &y1);
+        int width = self->w_top->width-40;
+        int pos = max(15, min (width+15,x1-5));
+        float st =  (float)( (float)(pos-15.0)/(float)width);
+         uint32_t lp = (self->af.samplesize * st);
+        if (lp < self->position) {
+            lp = self->position;
+            st = max(0.0, min(1.0, (float)((float)self->position/(float)self->af.samplesize)));
+        }
+        adj_set_state(w->adj, st);
     }
 
     // set playhead position to mouse pointer
@@ -1401,16 +1489,16 @@ private:
         Widget_t *w = (Widget_t*)w_;
         Metrics_t metrics;
         os_get_window_metrics(w, &metrics);
-        int width = metrics.width;
+        //int width = metrics.width;
         int height = metrics.height;
         if (!metrics.visible) return;
         float center = (float)height/2;
         float upcenter = (float)height;
         
-        float sliderstate = adj_get_state(w->adj_x);
+        //float sliderstate = adj_get_state(w->adj_x);
 
         use_fg_color_scheme(w, get_color_state(w));
-        float point = 5.0 + ((width - 5.0) * sliderstate);
+        float point = 5.0;// 5.0 + ((width - 5.0) * sliderstate);
         cairo_move_to (w->crb, point - 5.0, center);
         cairo_line_to(w->crb, point + 5.0, center);
         cairo_line_to(w->crb, point , upcenter);
@@ -1422,16 +1510,16 @@ private:
         Widget_t *w = (Widget_t*)w_;
         Metrics_t metrics;
         os_get_window_metrics(w, &metrics);
-        int width = metrics.width;
+        //int width = metrics.width;
         int height = metrics.height;
         if (!metrics.visible) return;
         float center = (float)height/2;
         float upcenter = (float)height;
         
-        float sliderstate = adj_get_state(w->adj_x);
+        //float sliderstate = adj_get_state(w->adj_x);
 
         use_fg_color_scheme(w, get_color_state(w));
-        float point =  ((width - 5.0) * sliderstate);
+        float point = 5.0;// ((width - 5.0) * sliderstate);
         cairo_move_to (w->crb, point - 5.0, center);
         cairo_line_to(w->crb, point + 5.0, center);
         cairo_line_to(w->crb, point , upcenter);
@@ -1599,16 +1687,16 @@ private:
         cairo_rectangle(w->crb, (width * state) - 1.5,2,3, height-4);
         cairo_fill(w->crb);
 
-        int halfWidth = width*0.5;
+        //int halfWidth = width*0.5;
 
         double state_l = adj_get_state(self->loopMark_L->adj);
         cairo_set_source_rgba(w->crb, 0.25, 0.25, 0.05, 0.666);
-        cairo_rectangle(w->crb, 0, 2, (halfWidth*state_l), height-4);
+        cairo_rectangle(w->crb, 0, 2, (width*state_l), height-4);
         cairo_fill(w->crb);
 
         double state_r = adj_get_state(self->loopMark_R->adj);
         cairo_set_source_rgba(w->crb, 0.25, 0.25, 0.05, 0.666);
-        int point = halfWidth + (halfWidth*state_r);
+        int point = (width*state_r);
         cairo_rectangle(w->crb, point, 2 , width - point, height-4);
         cairo_fill(w->crb);
         if (!self->ready) 
