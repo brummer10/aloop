@@ -258,6 +258,7 @@ public:
         w_top->parent_struct = (void*)this;
         w_top->func.dnd_notify_callback = dnd_load_response;
         w_top->func.key_press_callback = key_press;
+        w_top->func.resize_notify_callback = resize_callback;
         os_set_window_min_size(w_top, 335, 85, 440, 190);
 
         w = create_widget(app, w_top, 0, 0, 440, 190);
@@ -284,7 +285,7 @@ public:
         loopMark_L->func.value_changed_callback = slider_l_changed_callback;
 
         loopMark_R = add_hslider(w, "",415, 2, 18, 18);
-        loopMark_R->scale.gravity = WESTNORTH;
+        loopMark_R->scale.gravity = NONE;
         loopMark_R->parent_struct = (void*)this;
         loopMark_R->adj_x = add_adjustment(loopMark_R,0.0, 0.0, -1000.0, 0.0,1.0, CL_METER);
         loopMark_R->adj = loopMark_R->adj_x;
@@ -1403,6 +1404,17 @@ private:
             st = max(0.0, min(1.0, (float)((float)self->position/(float)self->af.samplesize)));
         }
         adj_set_state(w->adj, st);
+    }
+
+    // set loop mark positions on window resize
+    static void resize_callback(void *w_, void* user_data) {
+        Widget_t *w = (Widget_t*)w_;
+        AudioLooperUi *self = static_cast<AudioLooperUi*>(w->parent_struct);
+        float st = adj_get_state(self->loopMark_L->adj);
+        int width = w->width-40;
+        os_move_window(w->app->dpy, self->loopMark_L, 15+ (width * st), 2);
+        st = adj_get_state(self->loopMark_R->adj);
+        os_move_window(w->app->dpy, self->loopMark_R, 15+ (width * st), 2);
     }
 
     // set playhead position to mouse pointer
